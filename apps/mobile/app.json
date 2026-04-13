@@ -18,6 +18,13 @@
         {
           "locationWhenInUsePermission": "DestinaPH uses your location to show distances to recommended places and routes on the map."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DestinaPH uses your photo library so you can set your profile picture.",
+          "cameraPermission": "DestinaPH uses the camera so you can take a profile picture."
+        }
       ]
     ],
     "ios": {

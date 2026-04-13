@@ -1,12 +1,18 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { OwnerNotificationBell } from "../components/OwnerNotificationBell";
+import { SoundEnablePrompt } from "../components/SoundEnablePrompt";
 import { supabase } from "../lib/supabaseClient";
 
-const nav = [
-  { to: "/", label: "Dashboard", icon: "▤", end: true },
-  { to: "/listings", label: "Manage Listings", icon: "◎" },
-  { to: "/upgrade", label: "Premium", icon: "★" },
-  { to: "/settings", label: "Settings", icon: "⚙" },
+const OWNER_THEME_KEY = "destinaph_owner_dark";
+
+const mainNav = [
+  { to: "/", label: "Dashboard", icon: "\u25A4", end: true },
+  { to: "/listings", label: "Manage Listings", icon: "\u25CE" },
+  { to: "/reservations", label: "Reservations", icon: "\u{1F4C5}" },
+  { to: "/payment-accounts", label: "Payment accounts", icon: "\u{1F4B3}" },
+  { to: "/analytics", label: "Analytics", icon: "\u{1F4CA}" },
+  { to: "/upgrade", label: "Premium", icon: "\u2605" },
 ];
 
 function titleForPath(pathname: string): { title: string } {
@@ -15,6 +21,12 @@ function titleForPath(pathname: string): { title: string } {
   }
   if (pathname === "/listings") {
     return { title: "Manage Listings" };
+  }
+  if (pathname === "/reservations") {
+    return { title: "Reservations" };
+  }
+  if (pathname === "/payment-accounts") {
+    return { title: "Payment accounts" };
   }
   if (pathname === "/listings/new") {
     return { title: "Add New Listing" };
@@ -26,7 +38,7 @@ function titleForPath(pathname: string): { title: string } {
     return { title: "Premium" };
   }
   if (pathname === "/settings") {
-    return { title: "Settings" };
+    return { title: "Account settings" };
   }
   if (pathname === "/analytics") {
     return { title: "Analytics" };
@@ -42,6 +54,26 @@ export function OwnerLayout() {
   const [anyPremium, setAnyPremium] = useState(false);
   const [avatarLetter, setAvatarLetter] = useState("B");
   const [welcomeName, setWelcomeName] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(() => location.pathname.startsWith("/settings"));
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(OWNER_THEME_KEY) === "1";
+  });
+
+  const onSettingsPath = location.pathname.startsWith("/settings");
+
+  useEffect(() => {
+    if (onSettingsPath) setSettingsOpen(true);
+  }, [onSettingsPath]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("owner-dark", darkMode);
+    try {
+      window.localStorage.setItem(OWNER_THEME_KEY, darkMode ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [darkMode]);
 
   useEffect(() => {
     void (async () => {
@@ -83,6 +115,7 @@ export function OwnerLayout() {
 
   return (
     <div className="owner-shell">
+      <SoundEnablePrompt />
       {sidebarOpen && (
         <button
           type="button"
@@ -107,7 +140,7 @@ export function OwnerLayout() {
           </div>
         </div>
         <nav className="owner-nav">
-          {nav.map((item) => (
+          {mainNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -119,6 +152,49 @@ export function OwnerLayout() {
               {item.label}
             </NavLink>
           ))}
+          <div className="owner-nav__group">
+            <button
+              type="button"
+              className={`owner-nav__parent ${onSettingsPath ? "active" : ""}`}
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen((o) => !o)}
+            >
+              <span className="owner-nav__icon">{"\u2699"}</span>
+              <span className="owner-nav__parent-label">Settings</span>
+              <span className={`owner-nav__chevron ${settingsOpen ? "owner-nav__chevron--open" : ""}`} aria-hidden>
+                {"\u25BC"}
+              </span>
+            </button>
+            {settingsOpen && (
+              <div className="owner-nav__sub">
+                <NavLink
+                  to="/settings"
+                  className={({ isActive }) => (isActive ? "active" : "")}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  Account settings
+                </NavLink>
+                <div className="owner-nav__sub-row">
+                  <span className="owner-nav__sub-label">Dark mode</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={darkMode}
+                    className={`owner-nav__switch ${darkMode ? "owner-nav__switch--on" : ""}`}
+                    onClick={() => setDarkMode((d) => !d)}
+                  >
+                    <span className="owner-nav__switch-knob" />
+                  </button>
+                </div>
+                <a
+                  href="mailto:support@destinaph.example?subject=DestinaPH%20Business%20support"
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  Contact support
+                </a>
+              </div>
+            )}
+          </div>
         </nav>
         <div className="owner-sidebar__card">
           <div className="owner-sidebar__avatar">{avatarLetter}</div>
@@ -141,7 +217,7 @@ export function OwnerLayout() {
               aria-label="Menu"
               onClick={() => setSidebarOpen((o) => !o)}
             >
-              ☰
+              {"\u2630"}
             </button>
             <div className="owner-topbar__titles">
               <h2>{title}</h2>
@@ -151,13 +227,10 @@ export function OwnerLayout() {
             </div>
           </div>
           <div className="owner-topbar__right">
-            <button type="button" className="owner-topbar__bell" aria-label="Notifications">
-              🔔
-              <span className="owner-topbar__badge owner-topbar__badge--green">3</span>
-            </button>
+            <OwnerNotificationBell />
             <div className="owner-topbar__avatar" aria-hidden>
               {avatarLetter}
-              <span className="owner-topbar__chev">▾</span>
+              <span className="owner-topbar__chev">{"\u25BE"}</span>
             </div>
             <div className="owner-topbar__date">{rangeStr}</div>
           </div>

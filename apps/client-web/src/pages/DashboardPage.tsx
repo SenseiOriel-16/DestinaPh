@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { ClientDashboardSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 type Photo = { storage_path: string; sort_order: number };
@@ -18,6 +19,8 @@ type BizRow = {
   name: string;
   views: number;
   clicks: number;
+  rating_average: number | null;
+  rating_count: number | null;
   municipalities: { name: string } | null;
   business_photos: Photo[] | null;
 };
@@ -53,6 +56,7 @@ function trendFromTotal(n: number): string {
 }
 
 export function DashboardPage() {
+  const [pageReady, setPageReady] = useState(false);
   const [views, setViews] = useState(0);
   const [inquiries, setInquiries] = useState(0);
   const [bookings, setBookings] = useState(0);
@@ -67,20 +71,24 @@ export function DashboardPage() {
     views: number;
     inquiries: number;
     thumb: string | null;
+    ratingLabel: string;
   } | null>(null);
 
   const labels = useMemo(() => last7DayLabels(), []);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const { data: session } = await supabase.auth.getSession();
-      const uid = session.session?.user.id;
-      if (!uid) return;
+    void (async () => {
+      try {
+        const { data: session } = await supabase.auth.getSession();
+        const uid = session.session?.user.id;
+        if (!uid) return;
 
-      const { data: biz } = await supabase
+        const { data: biz } = await supabase
         .from("businesses")
-        .select("id,name,views,clicks,municipalities(name),business_photos(storage_path,sort_order)")
+        .select(
+          "id,name,views,clicks,rating_average,rating_count,municipalities(name),business_photos(storage_path,sort_order)",
+        )
         .eq("owner_id", uid);
 
       if (cancelled) return;
@@ -130,6 +138,10 @@ export function DashboardPage() {
         const thumb = path
           ? supabase.storage.from("business-images").getPublicUrl(path).data.publicUrl
           : null;
+        const rc = Math.max(0, Math.floor(Number(best.rating_count ?? 0)));
+        const ra = best.rating_average;
+        const ratingLabel =
+          rc > 0 && ra != null && !Number.isNaN(Number(ra)) ? `${Number(ra).toFixed(1)}/5` : "New";
         setTop({
           id: best.id,
           name: best.name,
@@ -137,15 +149,23 @@ export function DashboardPage() {
           views: best.views ?? 0,
           inquiries: best.clicks ?? 0,
           thumb,
+          ratingLabel,
         });
       } else {
         setTop(null);
+      }
+      } finally {
+        if (!cancelled) setPageReady(true);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [labels]);
+
+  if (!pageReady) {
+    return <ClientDashboardSkeleton />;
+  }
 
   const statCards = [
     { label: "Total Views", value: views, delta: trendFromTotal(views), icon: "👁", tint: "rgba(34,197,94,0.15)" },
@@ -155,7 +175,7 @@ export function DashboardPage() {
   ];
 
   return (
-    <div className="page page--flush-top">
+    <div className="page page--flush-top page-stack">
       <div className="stat-grid">
         {statCards.map((s) => (
           <div key={s.label} className="stat-card">
@@ -173,11 +193,11 @@ export function DashboardPage() {
         ))}
       </div>
 
-      <div className="dash-grid-2" style={{ marginTop: 8 }}>
+      <div className="dash-grid-2">
         <div className="card" style={{ minHeight: 320 }}>
-          <strong style={{ fontSize: 16, display: "block", marginBottom: 4 }}>Performance overview</strong>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>Views & inquiries (last 7 days)</span>
-          <div style={{ height: 260, marginTop: 16 }}>
+          <span className="card__title">Performance overview</span>
+          <span className="card__subtitle">Views & inquiries (last 7 days)</span>
+          <div className="card__chart-wrap">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
@@ -203,8 +223,8 @@ export function DashboardPage() {
         </div>
 
         <div className="card top-listing-card">
-          <strong style={{ fontSize: 16, display: "block", marginBottom: 4 }}>Top performing listing</strong>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>Based on total views</span>
+          <span className="card__title">Top performing listing</span>
+          <span className="card__subtitle">Based on total views</span>
           {top ? (
             <>
               <div className="top-listing-card__thumb">
@@ -219,14 +239,30 @@ export function DashboardPage() {
               <div className="top-listing-card__stats">
                 <span>{top.views.toLocaleString()} views</span>
                 <span>{top.inquiries.toLocaleString()} inquiries</span>
-                <span className="top-listing-card__stars">★ 4.8</span>
+                <span className="top-listing-card__stars">★ {top.ratingLabel}</span>
               </div>
               <Link to={`/listings/${top.id}`} className="btn btn-primary btn-inline">
                 View listing
               </Link>
             </>
           ) : (
-            <p style={{ color: "var(--muted)", marginTop: 20 }}>Create a listing to see performance here.</p>
+            <div className="empty-state empty-state--compact" style={{ marginTop: 18 }}>
+              <div className="empty-state__icon" aria-hidden>
+                📍
+              </div>
+              <p className="empty-state__title">No listings yet</p>
+              <p className="empty-state__text">
+                When you have published listings, your best performer by views will show here with a quick link to edit.
+              </p>
+              <div className="empty-state__actions">
+                <Link to="/listings/new" className="btn btn-primary btn-inline">
+                  + Add listing
+                </Link>
+                <Link to="/listings" className="btn btn-outline btn-inline">
+                  Manage listings
+                </Link>
+              </div>
+            </div>
           )}
         </div>
       </div>

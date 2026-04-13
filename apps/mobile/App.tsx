@@ -1,4 +1,4 @@
-import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
+import { NavigationContainer, DefaultTheme, NavigatorScreenParams } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { ItineraryProvider } from "./src/context/ItineraryContext";
@@ -6,10 +6,16 @@ import { SplashScreen } from "./src/screens/SplashScreen";
 import { WelcomeScreen } from "./src/screens/WelcomeScreen";
 import { WelcomeAuthScreen } from "./src/screens/WelcomeAuthScreen";
 import { InterestSelectScreen } from "./src/screens/InterestSelectScreen";
-import { MainTabs } from "./src/navigation/MainTabs";
-import { DestinationDetailScreen } from "./src/screens/DestinationDetailScreen";
+import { MainTabs, type TabParamList } from "./src/navigation/MainTabs";
+import { navyStackHeader } from "./src/navigation/stackScreenOptions";
 import { DestinationMapScreen } from "./src/screens/DestinationMapScreen";
 import { BookingRequestScreen } from "./src/screens/BookingRequestScreen";
+import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { HelpSupportScreen } from "./src/screens/HelpSupportScreen";
+import { AboutDestinaPHScreen } from "./src/screens/AboutDestinaPHScreen";
+import { FavoritesScreen } from "./src/screens/FavoritesScreen";
+import { ReviewsScreen } from "./src/screens/ReviewsScreen";
+import { EditProfileScreen } from "./src/screens/EditProfileScreen";
 import { colors } from "./src/theme/colors";
 
 export type RootStackParamList = {
@@ -17,10 +23,15 @@ export type RootStackParamList = {
   Welcome: undefined;
   WelcomeAuth: { mode: "signin" | "signup" };
   InterestSelect: { intent?: "onboarding" | "edit" } | undefined;
-  Main: undefined;
-  Detail: { id: string };
+  Main: NavigatorScreenParams<TabParamList> | undefined;
   DestinationMap: { title: string; destLat: number; destLng: number };
   BookingRequest: { businessId: string };
+  Settings: undefined;
+  HelpSupport: undefined;
+  AboutDestinaPH: undefined;
+  Favorites: undefined;
+  Reviews: undefined;
+  EditProfile: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -49,7 +60,6 @@ export default function App() {
           <Stack.Screen name="WelcomeAuth" component={WelcomeAuthScreen} />
           <Stack.Screen name="InterestSelect" component={InterestSelectScreen} />
           <Stack.Screen name="Main" component={MainTabs} />
-          <Stack.Screen name="Detail" component={DestinationDetailScreen} />
           <Stack.Screen
             name="DestinationMap"
             component={DestinationMapScreen}
@@ -66,8 +76,30 @@ export default function App() {
               headerStyle: { backgroundColor: colors.navy },
               headerTintColor: "#fff",
               headerTitleStyle: { fontWeight: "700" },
-              title: "Book",
+              title: "Reserve",
             }}
+          />
+          <Stack.Screen name="Settings" component={SettingsScreen} options={{ ...navyStackHeader, title: "Settings" }} />
+          <Stack.Screen
+            name="HelpSupport"
+            component={HelpSupportScreen}
+            options={{ ...navyStackHeader, title: "Help & Support" }}
+          />
+          <Stack.Screen
+            name="AboutDestinaPH"
+            component={AboutDestinaPHScreen}
+            options={{ ...navyStackHeader, title: "About" }}
+          />
+          <Stack.Screen
+            name="Favorites"
+            component={FavoritesScreen}
+            options={{ ...navyStackHeader, title: "My Favorites" }}
+          />
+          <Stack.Screen name="Reviews" component={ReviewsScreen} options={{ ...navyStackHeader, title: "My Reviews" }} />
+          <Stack.Screen
+            name="EditProfile"
+            component={EditProfileScreen}
+            options={{ ...navyStackHeader, title: "Edit profile" }}
           />
         </Stack.Navigator>
       </NavigationContainer>

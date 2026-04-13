@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Navigate } from "react-router-dom";
+import { AdminShellSkeleton } from "./PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 async function isAdminSession(): Promise<boolean> {
@@ -59,11 +60,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   }, []);
 
   if (!ready) {
-    return (
-      <div className="page">
-        <div className="card">Checking session…</div>
-      </div>
-    );
+    return <AdminShellSkeleton />;
   }
 
   if (!allowed) {

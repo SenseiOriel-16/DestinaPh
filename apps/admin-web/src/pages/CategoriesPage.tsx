@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { AdminFormTableSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 type Category = {
@@ -9,21 +10,26 @@ type Category = {
 };
 
 export function CategoriesPage() {
+  const [initialLoad, setInitialLoad] = useState(true);
   const [rows, setRows] = useState<Category[]>([]);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = async () => {
-    const { data, error } = await supabase
-      .from("categories")
-      .select("id,name,slug,color_token")
-      .order("name");
-    if (error) {
-      setMsg(error.message);
-      return;
+    try {
+      const { data, error } = await supabase
+        .from("categories")
+        .select("id,name,slug,color_token")
+        .order("name");
+      if (error) {
+        setMsg(error.message);
+        return;
+      }
+      setRows((data as Category[]) ?? []);
+    } finally {
+      setInitialLoad(false);
     }
-    setRows((data as Category[]) ?? []);
   };
 
   useEffect(() => {
@@ -58,17 +64,25 @@ export function CategoriesPage() {
     await load();
   };
 
+  if (initialLoad) {
+    return <AdminFormTableSkeleton />;
+  }
+
   return (
-    <div className="page">
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 24, color: "var(--primary)" }}>Categories</h1>
-        <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>
-          Curate the taxonomy surfaced in filters across web and mobile.
-        </p>
+    <div className="page page-stack admin-tool-page">
+      <header className="admin-page-hero admin-page-hero--compact">
+        <div className="admin-page-hero__text">
+          <p className="admin-page-hero__eyebrow">Taxonomy</p>
+          <h1 className="dash-title admin-page-hero__title">Categories</h1>
+          <p className="dash-sub admin-page-hero__sub">
+            Curate the labels travelers see in filters across web and mobile.
+          </p>
+        </div>
+        <div className="admin-page-hero__accent admin-page-hero__accent--cat" aria-hidden />
       </header>
-      {msg && <div className="card" style={{ marginBottom: 12 }}>{msg}</div>}
-      <form className="card" onSubmit={create} style={{ marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Add category</h3>
+      {msg && <div className="alert-banner alert-banner--error">{msg}</div>}
+      <form className="card card--lift" onSubmit={create}>
+        <h3 className="admin-form-card-title">Add category</h3>
         <div className="field">
           <label htmlFor="cname">Name</label>
           <input id="cname" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -81,7 +95,7 @@ export function CategoriesPage() {
           Save category
         </button>
       </form>
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card card--table-shell" style={{ padding: 0 }}>
         <table className="table">
           <thead>
             <tr>
@@ -102,6 +116,13 @@ export function CategoriesPage() {
                 </td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={3} className="table-empty">
+                  No categories yet. Add one above to get started.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

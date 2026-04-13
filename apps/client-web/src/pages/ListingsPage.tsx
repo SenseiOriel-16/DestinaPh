@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { ClientListingsSkeleton } from "../components/PageSkeletons";
 import { normalizeSavedAccommodations, type AccommodationItem } from "../lib/accommodations";
 import { supabase } from "../lib/supabaseClient";
 
@@ -38,23 +39,28 @@ function pillClass(status: string) {
 }
 
 export function ListingsPage() {
+  const [initialLoad, setInitialLoad] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [tab, setTab] = useState<"all" | "approved" | "pending" | "rejected">("all");
   const [savingAccKey, setSavingAccKey] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const { data: session } = await supabase.auth.getSession();
-    const uid = session.session?.user.id;
-    if (!uid) return;
-    const { data } = await supabase
-      .from("businesses")
-      .select(
-        "id,name,status,views,clicks,short_description,pricing_text,operating_day,operating_night,accommodations,categories(name,slug),municipalities(name),business_photos(storage_path,sort_order)",
-      )
-      .eq("owner_id", uid)
-      .order("created_at", { ascending: false });
-    setRows((data as Row[]) ?? []);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const uid = session.session?.user.id;
+      if (!uid) return;
+      const { data } = await supabase
+        .from("businesses")
+        .select(
+          "id,name,status,views,clicks,short_description,pricing_text,operating_day,operating_night,accommodations,categories(name,slug),municipalities(name),business_photos(storage_path,sort_order)",
+        )
+        .eq("owner_id", uid)
+        .order("created_at", { ascending: false });
+      setRows((data as Row[]) ?? []);
+    } finally {
+      setInitialLoad(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -109,27 +115,29 @@ export function ListingsPage() {
     setSavingAccKey(null);
   };
 
+  if (initialLoad) {
+    return <ClientListingsSkeleton />;
+  }
+
   return (
-    <div className="page page--flush-top">
-      <div className="listings-head">
-        <div>
-          <h1 className="dash-title" style={{ marginBottom: 6 }}>
-            Manage Listings
-          </h1>
-          <p className="dash-sub" style={{ marginBottom: 0 }}>
-            Your properties at a glance — mark room types as available or full so guests can plan ahead.
+    <div className="page page--flush-top owner-listings">
+      <header className="owner-listings__hero">
+        <div className="owner-listings__hero-main">
+          <p className="owner-listings__eyebrow">Your properties</p>
+          <h1 className="owner-listings__title">Manage Listings</h1>
+          <p className="owner-listings__lead">
+            See each place at a glance, tweak availability for room types, and jump into edit when you need more
+            detail.
           </p>
         </div>
-        <Link to="/listings/new" className="btn btn-primary btn-inline">
-          + Add New Listing
-        </Link>
-      </div>
-
-      {toast && (
-        <div className="card" style={{ marginBottom: 14, borderColor: "#fecaca", background: "#fff7f7" }}>
-          {toast}
+        <div className="owner-listings__hero-aside">
+          <Link to="/listings/new" className="btn btn-primary owner-listings__cta">
+            + Add listing
+          </Link>
         </div>
-      )}
+      </header>
+
+      {toast && <div className="alert-banner alert-banner--error">{toast}</div>}
 
       <div className="tabs">
         <button type="button" className={tab === "all" ? "active" : ""} onClick={() => setTab("all")}>
@@ -187,10 +195,16 @@ export function ListingsPage() {
                   <p className="listing-owner-card__desc">{r.short_description}</p>
                 )}
 
-                <div className="listing-owner-card__chips">
-                  <span className="listing-owner-card__chip">{r.categories?.name ?? "—"}</span>
-                  <span className="listing-owner-card__chip">{r.municipalities?.name ?? "—"}</span>
-                  <span className="listing-owner-card__chip">{r.views ?? 0} views</span>
+                <div className="listing-owner-card__chips" aria-label="Listing summary">
+                  <span className="listing-owner-card__chip listing-owner-card__chip--category">
+                    {r.categories?.name ?? "—"}
+                  </span>
+                  <span className="listing-owner-card__chip listing-owner-card__chip--place">
+                    {r.municipalities?.name ?? "—"}
+                  </span>
+                  <span className="listing-owner-card__chip listing-owner-card__chip--stat">
+                    {(r.views ?? 0).toLocaleString()} views
+                  </span>
                 </div>
 
                 {isResort && (hoursParts.length > 0 || r.pricing_text) && (
@@ -208,12 +222,16 @@ export function ListingsPage() {
                   </div>
                 )}
 
-                <section className="listing-owner-card__acc">
-                  <h3 className="listing-owner-card__acc-title">Accommodations</h3>
-                  <p className="listing-owner-card__acc-hint">
-                    Turn off <strong>Available</strong> when that room type is fully booked or not offered, so guests
-                    know before they travel (for example if they need space for 6 pax).
-                  </p>
+                <section className="listing-owner-card__acc" aria-labelledby={`acc-${r.id}`}>
+                  <div className="listing-owner-card__acc-head">
+                    <h3 className="listing-owner-card__acc-title" id={`acc-${r.id}`}>
+                      Accommodations
+                    </h3>
+                    <p className="listing-owner-card__acc-hint">
+                      Turn off <strong>Available</strong> when a type is full or not offered so travelers see accurate
+                      options before they go.
+                    </p>
+                  </div>
                   {acc.length === 0 ? (
                     <p className="listing-owner-card__acc-empty">
                       No room types yet.{" "}
@@ -265,13 +283,20 @@ export function ListingsPage() {
 
         {filtered.length === 0 && (
           <div className="card listing-owner-card listing-owner-card--empty">
-            <p style={{ margin: 0, color: "var(--muted)" }}>
-              No listings in this filter.{" "}
-              <Link to="/listings/new" className="link-teal">
-                Add one
-              </Link>
-              .
-            </p>
+            <div className="empty-state empty-state--compact">
+              <div className="empty-state__icon" aria-hidden>
+                🗂️
+              </div>
+              <p className="empty-state__title">Nothing in this tab</p>
+              <p className="empty-state__text">
+                Try another filter, or add a new listing so guests can discover your place.
+              </p>
+              <div className="empty-state__actions">
+                <Link to="/listings/new" className="btn btn-primary btn-inline">
+                  + Add listing
+                </Link>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AuthVisual } from "../components/AuthVisual";
+import { AuthSplitLayout } from "../components/AuthSplitLayout";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { supabase } from "../lib/supabaseClient";
 import {
@@ -167,10 +167,8 @@ export function RegisterPage() {
   };
 
   return (
-    <div className="auth-split">
-      <AuthVisual />
-      <div className="auth-split__panel">
-        <div className="auth-card auth-card--wide">
+    <AuthSplitLayout variant="client" formScrollClassName="auth-split__form-inner--wide">
+      <div className="auth-card auth-card--wide">
           <h2>Create your business account</h2>
           <p className="auth-lead">
             Your business owner account must be approved by an admin before you can sign in. Once active, listings do
@@ -217,9 +215,7 @@ export function RegisterPage() {
               </div>
             </div>
 
-            {geoError && (
-              <p style={{ fontSize: 13, color: "var(--danger, #c0392b)", margin: "0 0 12px" }}>{geoError}</p>
-            )}
+            {geoError && <div className="alert-banner alert-banner--error">{geoError}</div>}
 
             <div className="field">
               <label htmlFor="prov">Province</label>
@@ -347,7 +343,6 @@ export function RegisterPage() {
             </p>
           </div>
         </div>
-      </div>
-    </div>
+    </AuthSplitLayout>
   );
 }

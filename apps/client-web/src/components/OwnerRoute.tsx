@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
+import { OwnerShellSkeleton } from "./PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 async function isBusinessOwner(): Promise<boolean> {
@@ -61,11 +62,7 @@ export function OwnerRoute() {
   }, []);
 
   if (!ready) {
-    return (
-      <div className="owner-route-loading">
-        <div className="card">Loading…</div>
-      </div>
-    );
+    return <OwnerShellSkeleton />;
   }
 
   if (!allowed) {

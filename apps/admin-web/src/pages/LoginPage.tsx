@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { AuthVisual } from "../components/AuthVisual";
+import { AuthSplitLayout } from "../components/AuthSplitLayout";
+import { AuthCardSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 export function LoginPage() {
@@ -44,11 +45,7 @@ export function LoginPage() {
   }, []);
 
   if (checking) {
-    return (
-      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--bg)" }}>
-        <div className="card">Loading…</div>
-      </div>
-    );
+    return <AuthCardSkeleton message="Checking your session…" />;
   }
 
   if (canEnter) {
@@ -83,10 +80,8 @@ export function LoginPage() {
   };
 
   return (
-    <div className="auth-split">
-      <AuthVisual />
-      <div className="auth-split__panel">
-        <div className="auth-card">
+    <AuthSplitLayout>
+      <div className="auth-card">
           <h2>Welcome Back!</h2>
           <p className="auth-lead">Sign in to your admin account.</p>
           <form onSubmit={onSubmit}>
@@ -149,7 +144,6 @@ export function LoginPage() {
             <Link to="/register">Register here</Link>
           </p>
         </div>
-      </div>
-    </div>
+    </AuthSplitLayout>
   );
 }

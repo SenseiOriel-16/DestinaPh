@@ -1,21 +1,46 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { AdminNotificationBell } from "../components/AdminNotificationBell";
+import { SoundEnablePrompt } from "../components/SoundEnablePrompt";
 import { supabase } from "../lib/supabaseClient";
+import { primeNotificationAudioFromUserGesture } from "../lib/notificationSound";
 
-const nav = [
-  { to: "/", label: "Dashboard", icon: "▤", end: true },
-  { to: "/listings", label: "Manage Clients", icon: "◎" },
-  { to: "/premium-payments", label: "Premium payments", icon: "💳" },
-  { to: "/reports", label: "Analytics", icon: "📊" },
-  { to: "/settings", label: "Settings", icon: "⚙" },
+const mainNav = [
+  { to: "/", label: "Dashboard", icon: "\u25A4", end: true },
+  { to: "/listings", label: "Manage Clients", icon: "\u25CE" },
+  { to: "/premium-payments", label: "Premium payments", icon: "\u{1F4B3}" },
+  { to: "/reports", label: "Analytics", icon: "\u{1F4CA}" },
+];
+
+const settingsSubNav = [
+  { to: "/settings/categories", label: "Categories" },
+  { to: "/settings/municipalities", label: "Municipalities" },
+  { to: "/settings/featured", label: "Featured" },
+  { to: "/settings/plans", label: "Subscription plans" },
+  { to: "/settings/premium-accounts", label: "Premium payout accounts" },
 ];
 
 export function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(() => location.pathname.startsWith("/settings"));
   const [userLabel, setUserLabel] = useState("Admin");
   const [userEmail, setUserEmail] = useState("");
+
+  const onSettingsPath = location.pathname.startsWith("/settings");
+
+  useEffect(() => {
+    if (onSettingsPath) setSettingsOpen(true);
+  }, [onSettingsPath]);
+
+  useEffect(() => {
+    const onFirstGesture = () => {
+      void primeNotificationAudioFromUserGesture();
+    };
+    document.addEventListener("pointerdown", onFirstGesture, { once: true, capture: true });
+    return () => document.removeEventListener("pointerdown", onFirstGesture, { capture: true } as AddEventListenerOptions);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -41,6 +66,7 @@ export function AdminLayout() {
 
   return (
     <div className="admin-shell">
+      <SoundEnablePrompt />
       {sidebarOpen && (
         <button
           type="button"
@@ -65,7 +91,7 @@ export function AdminLayout() {
           </div>
         </div>
         <nav className="admin-nav">
-          {nav.map((item) => (
+          {mainNav.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -77,6 +103,34 @@ export function AdminLayout() {
               {item.label}
             </NavLink>
           ))}
+          <div className="admin-nav__group">
+            <button
+              type="button"
+              className={`admin-nav__parent ${onSettingsPath ? "active" : ""}`}
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen((o) => !o)}
+            >
+              <span className="admin-nav__icon">{"\u2699"}</span>
+              <span className="admin-nav__parent-label">Settings</span>
+              <span className={`admin-nav__chevron ${settingsOpen ? "admin-nav__chevron--open" : ""}`} aria-hidden>
+                {"\u25BC"}
+              </span>
+            </button>
+            {settingsOpen && (
+              <div className="admin-nav__sub">
+                {settingsSubNav.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) => (isActive ? "active" : "")}
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
         </nav>
         <div className="admin-sidebar__user">
           <div className="admin-sidebar__avatar">{userLabel.slice(0, 1).toUpperCase()}</div>
@@ -98,18 +152,17 @@ export function AdminLayout() {
               aria-label="Menu"
               onClick={() => setSidebarOpen((o) => !o)}
             >
-              ☰
+              {"\u2630"}
             </button>
           </div>
           <div className="admin-topbar__right">
-            <button type="button" className="admin-topbar__bell" aria-label="Notifications">
-              🔔
-              <span className="admin-topbar__badge">3</span>
-            </button>
+            <AdminNotificationBell />
             <div className="admin-topbar__date">{today}</div>
           </div>
         </header>
-        <Outlet key={location.pathname} />
+        <div className="admin-main__body">
+          <Outlet key={location.pathname} />
+        </div>
       </div>
     </div>
   );

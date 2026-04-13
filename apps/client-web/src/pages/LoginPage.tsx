@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { AuthVisual } from "../components/AuthVisual";
+import { AuthSplitLayout } from "../components/AuthSplitLayout";
+import { AuthCardSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 type ProfileRow = {
@@ -84,11 +85,7 @@ export function LoginPage() {
   }, []);
 
   if (checking) {
-    return (
-      <div className="owner-route-loading">
-        <div className="card">Loading…</div>
-      </div>
-    );
+    return <AuthCardSkeleton message="Checking your session…" />;
   }
 
   if (canEnterDashboard) {
@@ -155,31 +152,16 @@ export function LoginPage() {
   };
 
   return (
-    <div className="auth-split">
-      <AuthVisual />
-      <div className="auth-split__panel">
-        <div className="auth-card">
+    <AuthSplitLayout variant="client">
+      <div className="auth-card">
           <h2>Welcome back</h2>
           <p className="auth-lead">Sign in to your business account to manage listings and reach travelers.</p>
-          {banner && (
-            <div
-              className="card"
-              style={{
-                marginBottom: 16,
-                background: "#ecfdf5",
-                borderColor: "#6ee7b7",
-                fontSize: 14,
-                color: "#065f46",
-              }}
-            >
-              {banner}
-            </div>
-          )}
+          {banner && <div className="alert-banner alert-banner--success">{banner}</div>}
           {sessionWrongRole && (
-            <p style={{ marginBottom: 16, fontSize: 14, color: "var(--muted)" }}>
+            <div className="alert-banner alert-banner--neutral" style={{ marginBottom: 16 }}>
               You are signed in, but business owner access is not approved yet, the account is suspended, or this is not
               a business owner account. Sign out if you need to log in with a different email.
-            </p>
+            </div>
           )}
           <form onSubmit={onSubmit}>
             <div className="field">
@@ -243,7 +225,6 @@ export function LoginPage() {
             </p>
           </div>
         </div>
-      </div>
-    </div>
+    </AuthSplitLayout>
   );
 }

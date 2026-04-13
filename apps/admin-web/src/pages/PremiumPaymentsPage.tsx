@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AdminPremiumSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 type Row = {
@@ -24,6 +25,8 @@ const METHOD_LABEL: Record<string, string> = {
 export function PremiumPaymentsPage() {
   const [tab, setTab] = useState<"pending" | "all">("pending");
   const [rows, setRows] = useState<Row[]>([]);
+  const [pageReady, setPageReady] = useState(false);
+  const firstLoadDone = useRef(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [rejectNotes, setRejectNotes] = useState("");
@@ -32,17 +35,24 @@ export function PremiumPaymentsPage() {
 
   const load = useCallback(async () => {
     setMsg(null);
-    let q = supabase
-      .from("premium_upgrade_requests")
-      .select("id,business_id,payment_method,reference_number,proof_storage_path,status,admin_notes,created_at,reviewed_at,businesses(name)")
-      .order("created_at", { ascending: false });
-    if (tab === "pending") q = q.eq("status", "pending");
-    const { data, error } = await q;
-    if (error) {
-      setMsg(error.message);
-      return;
+    try {
+      let q = supabase
+        .from("premium_upgrade_requests")
+        .select("id,business_id,payment_method,reference_number,proof_storage_path,status,admin_notes,created_at,reviewed_at,businesses(name)")
+        .order("created_at", { ascending: false });
+      if (tab === "pending") q = q.eq("status", "pending");
+      const { data, error } = await q;
+      if (error) {
+        setMsg(error.message);
+        return;
+      }
+      setRows((data as unknown as Row[]) ?? []);
+    } finally {
+      if (!firstLoadDone.current) {
+        firstLoadDone.current = true;
+        setPageReady(true);
+      }
     }
-    setRows((data as unknown as Row[]) ?? []);
   }, [tab]);
 
   useEffect(() => {
@@ -142,17 +152,26 @@ export function PremiumPaymentsPage() {
     await load();
   };
 
+  if (!pageReady) {
+    return <AdminPremiumSkeleton />;
+  }
+
   return (
-    <div className="page">
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 24, color: "var(--primary)" }}>Premium payment requests</h1>
-        <p style={{ margin: "6px 0 0", color: "var(--muted)", maxWidth: 640 }}>
-          Review GCash / Maya / PayPal (or e-wallet) payments and proof screenshots. Approving enables premium and
-          booking tools for that listing.
-        </p>
+    <div className="page page-stack admin-tool-page">
+      <header className="admin-page-hero admin-page-hero--compact">
+        <div className="admin-page-hero__text">
+          <p className="admin-page-hero__eyebrow">Revenue</p>
+          <h1 className="dash-title admin-page-hero__title">Premium payment requests</h1>
+          <p className="dash-sub admin-page-hero__sub" style={{ maxWidth: 640 }}>
+            Review GCash / Maya / PayPal (or e-wallet) payments and proof screenshots. Approving enables premium and
+            booking tools for that listing. Platform payout QR and account numbers are configured under Settings →
+            Premium payout accounts.
+          </p>
+        </div>
+        <div className="admin-page-hero__accent admin-page-hero__accent--plans" aria-hidden />
       </header>
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+      <div className="segment-tabs">
         <button type="button" className={`btn ${tab === "pending" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("pending")}>
           Pending
         </button>
@@ -161,13 +180,9 @@ export function PremiumPaymentsPage() {
         </button>
       </div>
 
-      {msg && (
-        <div className="card" style={{ marginBottom: 12, color: "var(--danger, #c0392b)" }}>
-          {msg}
-        </div>
-      )}
+      {msg && <div className="alert-banner alert-banner--error">{msg}</div>}
 
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card card--table-shell" style={{ padding: 0 }}>
         <table className="table">
           <thead>
             <tr>
@@ -231,8 +246,8 @@ export function PremiumPaymentsPage() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ color: "var(--muted)" }}>
-                  No premium payment requests.
+                <td colSpan={6} className="table-empty">
+                  No premium payment requests in this tab.
                 </td>
               </tr>
             )}

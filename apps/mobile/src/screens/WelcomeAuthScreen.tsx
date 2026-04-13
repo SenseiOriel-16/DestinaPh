@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
 import { HERO_BACKGROUND } from "../constants/heroBackground";
+import { isValidUsernameFormat, normalizeUsername, resolveLoginEmail } from "../lib/authUsername";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 import { BrandAppIcon } from "../ui/BrandAppIcon";
@@ -27,15 +28,19 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const mode = route.params.mode;
   const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setFullName("");
+    setUsername("");
     setEmail("");
     setPassword("");
+    setConfirmPassword("");
     setMessage(null);
   }, [route.params.mode]);
 
@@ -45,30 +50,82 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
 
   const onSignUp = async () => {
     setMessage(null);
+    const name = fullName.trim();
+    const uname = normalizeUsername(username);
+    const mail = email.trim().toLowerCase();
+    if (!name) {
+      setMessage("Please enter your full name.");
+      return;
+    }
+    if (!isValidUsernameFormat(uname)) {
+      setMessage("Username: 3–24 characters, letters, numbers, or underscore only.");
+      return;
+    }
+    if (!mail.includes("@")) {
+      setMessage("Please enter a valid email.");
+      return;
+    }
+    if (password.length < 6) {
+      setMessage("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setMessage("Passwords do not match.");
+      return;
+    }
     setBusy(true);
-    const { error } = await supabase.auth.signUp({
-      email: email.trim(),
+    const { data: free, error: availErr } = await supabase.rpc("is_username_available", { p_username: uname });
+    if (availErr) {
+      setBusy(false);
+      setMessage(availErr.message);
+      return;
+    }
+    if (free === false) {
+      setBusy(false);
+      setMessage("That username is already taken.");
+      return;
+    }
+    const { data, error } = await supabase.auth.signUp({
+      email: mail,
       password,
       options: {
         data: {
-          full_name: fullName.trim(),
+          full_name: name,
+          username: uname,
           role: "consumer",
         },
       },
     });
-    setBusy(false);
     if (error) {
+      setBusy(false);
       setMessage(error.message);
       return;
     }
+    if (!data.session) {
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email: mail, password });
+      if (signInErr) {
+        setBusy(false);
+        setMessage(
+          "Account created. Open the link in your email to confirm your address, then return here and sign in.",
+        );
+        return;
+      }
+    }
+    setBusy(false);
     goInterests();
   };
 
   const onSignIn = async () => {
     setMessage(null);
     setBusy(true);
+    const resolved = await resolveLoginEmail(supabase, email);
+    if (resolved.error || !resolved.email) {
+      setBusy(false);
+      setMessage(resolved.error ?? "We could not find that email or username.");
+      return;
+    }
     const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+      email: resolved.email,
       password,
     });
     setBusy(false);
@@ -104,24 +161,30 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
               <Text style={styles.backText}>Back</Text>
             </Pressable>
 
-            <View style={styles.brandCard}>
-              <BrandAppIcon size={72} />
+            <GlassPanel
+              style={styles.brandGlassOuter}
+              contentStyle={styles.brandGlassInner}
+              borderRadius={24}
+              variant="frosted"
+              intensity={60}
+            >
+              <BrandAppIcon size={72} glass />
               <Text style={styles.brandName}>DestinaPH</Text>
               <View style={styles.taglineRow}>
                 <View style={styles.taglineLine} />
                 <Text style={styles.taglineText}>{"Discover Destinations Para Sa'yo."}</Text>
                 <View style={styles.taglineLine} />
               </View>
-            </View>
+            </GlassPanel>
 
             <Text style={styles.screenTitle}>{mode === "signup" ? "Create account" : "Sign in"}</Text>
             <Text style={styles.screenSub}>
               {mode === "signup"
-                ? "Use the same email you will use for booking confirmations."
-                : "Sign in to continue — you will pick your interests next."}
+                ? "Choose a unique username and the email you will use for booking confirmations."
+                : "Sign in with your email or username — you will pick your interests next."}
             </Text>
 
-            <GlassPanel style={styles.cardOuter} contentStyle={styles.cardInner} borderRadius={22}>
+            <GlassPanel style={styles.cardOuter} contentStyle={styles.cardInner} borderRadius={22} intensity={58}>
               {mode === "signup" && (
                 <View style={styles.fieldBlock}>
                   <Text style={styles.label}>Full name</Text>
@@ -131,7 +194,25 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
                       style={styles.input}
                       value={fullName}
                       onChangeText={setFullName}
-                      placeholder="Your name"
+                      placeholder="Halimbawa: Juan dela Cruz"
+                      placeholderTextColor={colors.muted2}
+                    />
+                  </View>
+                </View>
+              )}
+
+              {mode === "signup" && (
+                <View style={styles.fieldBlock}>
+                  <Text style={styles.label}>Username</Text>
+                  <View style={styles.inputShell}>
+                    <Ionicons name="at-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      value={username}
+                      onChangeText={setUsername}
+                      placeholder="Hal.: juandelacruz"
                       placeholderTextColor={colors.muted2}
                     />
                   </View>
@@ -139,17 +220,17 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
               )}
 
               <View style={[styles.fieldBlock, mode === "signup" && { marginTop: 4 }]}>
-                <Text style={styles.label}>Email</Text>
+                <Text style={styles.label}>{mode === "signup" ? "Email" : "Email or username"}</Text>
                 <View style={styles.inputShell}>
                   <Ionicons name="mail-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     autoCapitalize="none"
-                    keyboardType="email-address"
-                    autoComplete="email"
+                    keyboardType={mode === "signup" ? "email-address" : "default"}
+                    autoComplete={mode === "signup" ? "email" : "username"}
                     value={email}
                     onChangeText={setEmail}
-                    placeholder="you@example.com"
+                    placeholder={mode === "signup" ? "email@halimbawa.com" : "Email o username"}
                     placeholderTextColor={colors.muted2}
                   />
                 </View>
@@ -170,6 +251,24 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
                   />
                 </View>
               </View>
+
+              {mode === "signup" && (
+                <View style={styles.fieldBlock}>
+                  <Text style={styles.label}>Confirm password</Text>
+                  <View style={styles.inputShell}>
+                    <Ionicons name="lock-closed-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholder="••••••••"
+                      placeholderTextColor={colors.muted2}
+                      autoComplete="password-new"
+                    />
+                  </View>
+                </View>
+              )}
 
               {message ? (
                 <View style={styles.msgBox}>
@@ -248,23 +347,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 16,
   },
-  brandCard: {
+  brandGlassOuter: {
     alignSelf: "center",
-    alignItems: "center",
     maxWidth: 360,
     width: "100%",
     marginBottom: 20,
+  },
+  brandGlassInner: {
+    alignItems: "center",
     paddingVertical: 14,
     paddingHorizontal: 20,
-    backgroundColor: "rgba(255,255,255,0.97)",
-    borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(0,0,0,0.06)",
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
   },
   brandName: {
     marginTop: 8,
@@ -337,8 +429,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.55)",
-    backgroundColor: "rgba(255,255,255,0.45)",
+    borderColor: "rgba(255,255,255,0.68)",
+    backgroundColor: "rgba(255,255,255,0.22)",
     paddingHorizontal: 4,
   },
   inputIcon: {

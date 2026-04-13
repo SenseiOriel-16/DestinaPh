@@ -1,5 +1,6 @@
 import { DragEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { ClientEditorSkeleton } from "../components/PageSkeletons";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { supabase } from "../lib/supabaseClient";
 import { type AccommodationItem } from "../lib/accommodations";
@@ -64,9 +65,25 @@ export function ListingEditorPage() {
   ]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [existingPhotoCount, setExistingPhotoCount] = useState(0);
+  const [listingIsPremium, setListingIsPremium] = useState(false);
+  const [payGcashEnabled, setPayGcashEnabled] = useState(false);
+  const [payMayaEnabled, setPayMayaEnabled] = useState(false);
+  const [payPaypalEnabled, setPayPaypalEnabled] = useState(false);
+  const [payGcashLabel, setPayGcashLabel] = useState("");
+  const [payMayaLabel, setPayMayaLabel] = useState("");
+  const [payPaypalEmail, setPayPaypalEmail] = useState("");
+  const [payGcashAccountName, setPayGcashAccountName] = useState("");
+  const [payGcashAccountNumber, setPayGcashAccountNumber] = useState("");
+  const [payMayaAccountName, setPayMayaAccountName] = useState("");
+  const [payMayaAccountNumber, setPayMayaAccountNumber] = useState("");
+  const [payGcashQrPath, setPayGcashQrPath] = useState<string | null>(null);
+  const [payMayaQrPath, setPayMayaQrPath] = useState<string | null>(null);
+  const [pendingGcashQr, setPendingGcashQr] = useState<File | null>(null);
+  const [pendingMayaQr, setPendingMayaQr] = useState<File | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saveSuccessKind, setSaveSuccessKind] = useState<null | "created" | "updated">(null);
+  const [detailReady, setDetailReady] = useState(isNew);
 
   const categorySlug = categories.find((c) => c.id === categoryId)?.slug ?? "";
   const isResort = categorySlug === RESORT_SLUG;
@@ -189,9 +206,15 @@ export function ListingEditorPage() {
   }, [isNew]);
 
   useEffect(() => {
-    if (isNew) return;
+    if (isNew) {
+      setDetailReady(true);
+      return;
+    }
+    let cancelled = false;
     void (async () => {
-      const { data, error } = await supabase
+      try {
+        setDetailReady(false);
+        const { data, error } = await supabase
         .from("businesses")
         .select("*, categories(slug)")
         .eq("id", id!)
@@ -255,6 +278,22 @@ export function ListingEditorPage() {
         );
       }
 
+      setListingIsPremium(Boolean(row.is_premium));
+      setPayGcashEnabled(Boolean(row.pay_gcash_enabled));
+      setPayMayaEnabled(Boolean(row.pay_maya_enabled));
+      setPayPaypalEnabled(Boolean(row.pay_paypal_enabled));
+      setPayGcashLabel(String(row.pay_gcash_account_label ?? ""));
+      setPayMayaLabel(String(row.pay_maya_account_label ?? ""));
+      setPayPaypalEmail(String(row.pay_paypal_email ?? ""));
+      setPayGcashAccountName(String((row as any).pay_gcash_account_name ?? ""));
+      setPayGcashAccountNumber(String((row as any).pay_gcash_account_number ?? ""));
+      setPayMayaAccountName(String((row as any).pay_maya_account_name ?? ""));
+      setPayMayaAccountNumber(String((row as any).pay_maya_account_number ?? ""));
+      setPayGcashQrPath((row.pay_gcash_qr_path as string | null) ?? null);
+      setPayMayaQrPath((row.pay_maya_qr_path as string | null) ?? null);
+      setPendingGcashQr(null);
+      setPendingMayaQr(null);
+
       const { count: photoCount, error: photoCountErr } = await supabase
         .from("business_photos")
         .select("id", { count: "exact", head: true })
@@ -306,7 +345,13 @@ export function ListingEditorPage() {
           `Legacy address (not in PSGC): ${pName} → ${mName}. Please re-select using the new dropdowns.`,
         );
       }
+      } finally {
+        if (!cancelled) setDetailReady(true);
+      }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [id, isNew]);
 
   const addTag = () => {
@@ -475,6 +520,24 @@ export function ListingEditorPage() {
       entrance_fee_pesos = candidates.length ? Math.min(...candidates) : null;
     }
 
+    const payPayload =
+      !isNew && listingIsPremium
+        ? {
+            pay_gcash_enabled: payGcashEnabled,
+            pay_maya_enabled: payMayaEnabled,
+            pay_paypal_enabled: payPaypalEnabled,
+            pay_gcash_account_label: payGcashLabel.trim() || null,
+            pay_maya_account_label: payMayaLabel.trim() || null,
+            pay_paypal_email: payPaypalEnabled ? payPaypalEmail.trim() || null : null,
+            pay_gcash_account_name: payGcashEnabled ? payGcashAccountName.trim() || null : null,
+            pay_gcash_account_number: payGcashEnabled ? payGcashAccountNumber.trim() || null : null,
+            pay_maya_account_name: payMayaEnabled ? payMayaAccountName.trim() || null : null,
+            pay_maya_account_number: payMayaEnabled ? payMayaAccountNumber.trim() || null : null,
+            pay_gcash_qr_path: payGcashEnabled ? payGcashQrPath : null,
+            pay_maya_qr_path: payMayaEnabled ? payMayaQrPath : null,
+          }
+        : {};
+
     const payload = {
       owner_id: uid,
       name: name.trim(),
@@ -497,6 +560,7 @@ export function ListingEditorPage() {
       latitude,
       longitude,
       status: "approved" as const,
+      ...payPayload,
     };
     try {
       if (isNew) {
@@ -520,6 +584,40 @@ export function ListingEditorPage() {
           setMsg(error.message);
           setBusy(false);
           return;
+        }
+        const bid = id!;
+        if (listingIsPremium) {
+          const uploadQr = async (file: File, base: "gcash" | "maya") => {
+            const raw = file.name.split(".").pop()?.toLowerCase() || "jpg";
+            const safe = ["jpg", "jpeg", "png", "webp"].includes(raw) ? raw.replace("jpeg", "jpg") : "jpg";
+            const path = `${bid}/${base}.${safe}`;
+            const { error: uerr } = await supabase.storage.from("booking-qrcodes").upload(path, file, {
+              upsert: true,
+              contentType: file.type || "image/jpeg",
+            });
+            if (uerr) throw new Error(uerr.message);
+            if (base === "gcash") {
+              await supabase.from("businesses").update({ pay_gcash_qr_path: path }).eq("id", bid);
+              setPayGcashQrPath(path);
+            } else {
+              await supabase.from("businesses").update({ pay_maya_qr_path: path }).eq("id", bid);
+              setPayMayaQrPath(path);
+            }
+          };
+          try {
+            if (pendingGcashQr) {
+              await uploadQr(pendingGcashQr, "gcash");
+              setPendingGcashQr(null);
+            }
+            if (pendingMayaQr) {
+              await uploadQr(pendingMayaQr, "maya");
+              setPendingMayaQr(null);
+            }
+          } catch (e) {
+            setMsg(e instanceof Error ? e.message : "QR upload failed");
+            setBusy(false);
+            return;
+          }
         }
         if (pendingFiles.length) {
           await uploadMany(id!, pendingFiles);
@@ -565,6 +663,10 @@ export function ListingEditorPage() {
     void ingestImageFiles(ev.dataTransfer.files);
   };
 
+  if (!detailReady) {
+    return <ClientEditorSkeleton />;
+  }
+
   return (
     <div className="page page--flush-top">
       <div className="editor-head">
@@ -575,11 +677,7 @@ export function ListingEditorPage() {
           {isNew ? "Add New Listing" : "Edit Listing"}
         </h1>
       </div>
-      {msg && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          {msg}
-        </div>
-      )}
+      {msg && <div className="alert-banner alert-banner--error">{msg}</div>}
       <form onSubmit={onSubmit}>
         <div className="editor-grid">
           <div className="card editor-card">
@@ -848,6 +946,157 @@ export function ListingEditorPage() {
                 + Add accommodation
               </button>
             </div>
+
+            {!isNew && listingIsPremium ? (
+              <div className="field" style={{ marginTop: 8 }}>
+                <h3 className="editor-card__title" style={{ marginBottom: 8 }}>
+                  Booking payments (traveler app)
+                </h3>
+                <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 12px" }}>
+                  Turn on only the channels you use. Upload a QR for GCash and Maya. For PayPal, enter the email or
+                  PayPal.me handle travelers should pay. Travelers only see methods you enable. Save the listing after
+                  changing QR images.
+                </p>
+                <label className="acc-editor-avail" style={{ marginBottom: 10 }}>
+                  <input
+                    type="checkbox"
+                    checked={payGcashEnabled}
+                    onChange={(e) => setPayGcashEnabled(e.target.checked)}
+                  />
+                  <span>Accept GCash</span>
+                </label>
+                {payGcashEnabled ? (
+                  <>
+                    <label htmlFor="payGcashName">GCash account name</label>
+                    <input
+                      id="payGcashName"
+                      value={payGcashAccountName}
+                      onChange={(e) => setPayGcashAccountName(e.target.value)}
+                      placeholder="e.g. Juan D."
+                    />
+                    <label htmlFor="payGcashNo" style={{ marginTop: 8 }}>
+                      GCash account number
+                    </label>
+                    <input
+                      id="payGcashNo"
+                      inputMode="numeric"
+                      value={payGcashAccountNumber}
+                      onChange={(e) => setPayGcashAccountNumber(e.target.value)}
+                      placeholder="e.g. 09xxxxxxxxx"
+                    />
+                    <p style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 0" }}>
+                      Optional legacy field (older app versions):
+                    </p>
+                    <label htmlFor="payGcashLbl" style={{ marginTop: 6 }}>
+                      GCash label (legacy)
+                    </label>
+                    <input
+                      id="payGcashLbl"
+                      value={payGcashLabel}
+                      onChange={(e) => setPayGcashLabel(e.target.value)}
+                      placeholder="09xx / Juan D."
+                    />
+                    <label htmlFor="payGcashQr" style={{ marginTop: 8 }}>
+                      GCash QR image
+                    </label>
+                    <input
+                      id="payGcashQr"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setPendingGcashQr(e.target.files?.[0] ?? null)}
+                    />
+                    {payGcashQrPath ? (
+                      <img
+                        src={supabase.storage.from("booking-qrcodes").getPublicUrl(payGcashQrPath).data.publicUrl}
+                        alt="GCash QR"
+                        style={{ maxHeight: 140, marginTop: 8, borderRadius: 8 }}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+
+                <label className="acc-editor-avail" style={{ marginTop: 14 }}>
+                  <input
+                    type="checkbox"
+                    checked={payMayaEnabled}
+                    onChange={(e) => setPayMayaEnabled(e.target.checked)}
+                  />
+                  <span>Accept Maya</span>
+                </label>
+                {payMayaEnabled ? (
+                  <>
+                    <label htmlFor="payMayaName">Maya account name</label>
+                    <input
+                      id="payMayaName"
+                      value={payMayaAccountName}
+                      onChange={(e) => setPayMayaAccountName(e.target.value)}
+                      placeholder="e.g. Juan D."
+                    />
+                    <label htmlFor="payMayaNo" style={{ marginTop: 8 }}>
+                      Maya account number
+                    </label>
+                    <input
+                      id="payMayaNo"
+                      inputMode="numeric"
+                      value={payMayaAccountNumber}
+                      onChange={(e) => setPayMayaAccountNumber(e.target.value)}
+                      placeholder="e.g. 09xxxxxxxxx"
+                    />
+                    <p style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 0" }}>
+                      Optional legacy field (older app versions):
+                    </p>
+                    <label htmlFor="payMayaLbl" style={{ marginTop: 6 }}>
+                      Maya label (legacy)
+                    </label>
+                    <input
+                      id="payMayaLbl"
+                      value={payMayaLabel}
+                      onChange={(e) => setPayMayaLabel(e.target.value)}
+                    />
+                    <label htmlFor="payMayaQr" style={{ marginTop: 8 }}>
+                      Maya QR image
+                    </label>
+                    <input
+                      id="payMayaQr"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setPendingMayaQr(e.target.files?.[0] ?? null)}
+                    />
+                    {payMayaQrPath ? (
+                      <img
+                        src={supabase.storage.from("booking-qrcodes").getPublicUrl(payMayaQrPath).data.publicUrl}
+                        alt="Maya QR"
+                        style={{ maxHeight: 140, marginTop: 8, borderRadius: 8 }}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+
+                <label className="acc-editor-avail" style={{ marginTop: 14 }}>
+                  <input
+                    type="checkbox"
+                    checked={payPaypalEnabled}
+                    onChange={(e) => setPayPaypalEnabled(e.target.checked)}
+                  />
+                  <span>Accept PayPal</span>
+                </label>
+                {payPaypalEnabled ? (
+                  <>
+                    <label htmlFor="payPal">PayPal email or PayPal.me link</label>
+                    <input
+                      id="payPal"
+                      value={payPaypalEmail}
+                      onChange={(e) => setPayPaypalEmail(e.target.value)}
+                      placeholder="you@email.com or paypal.me/yourname"
+                    />
+                  </>
+                ) : null}
+              </div>
+            ) : !isNew ? (
+              <p style={{ fontSize: 13, color: "var(--muted)" }}>
+                Upgrade this listing to <strong>Premium</strong> to accept paid reservations from the DestinaPH app.
+              </p>
+            ) : null}
 
             <div className="field">
               <label>Resort images</label>

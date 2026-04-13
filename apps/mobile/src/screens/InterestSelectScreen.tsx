@@ -2,7 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Image,
   ImageBackground,
   Pressable,
   ScrollView,
@@ -13,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
+import { ScreenBackBar } from "../components/ScreenBackBar";
 import { HERO_BACKGROUND } from "../constants/heroBackground";
 import { TRAVEL_CATEGORIES } from "../data/travelCategories";
 import { getInterestSlugs, markOnboardingComplete, saveInterestSlugs } from "../lib/onboardingStorage";
@@ -107,11 +107,17 @@ export function InterestSelectScreen({ navigation, route }: Props) {
       <ImageBackground source={HERO_BACKGROUND} style={styles.bgImage} resizeMode="cover">
         <View style={styles.scrim} />
         <View style={[styles.inner, { paddingTop: Math.max(insets.top, 12) }]}>
+          <ScreenBackBar tone="light" />
           <ScrollView
             contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPad }]}
             showsVerticalScrollIndicator={false}
           >
-            <GlassPanel style={styles.brandGlassOuter} contentStyle={styles.brandGlassInner} borderRadius={24}>
+            <GlassPanel
+              style={styles.brandGlassOuter}
+              contentStyle={styles.brandGlassInner}
+              borderRadius={24}
+              intensity={56}
+            >
               <BrandAppIcon size={88} />
               <Text style={styles.brandName}>DestinaPH</Text>
               <View style={styles.taglineRow}>
@@ -144,19 +150,20 @@ export function InterestSelectScreen({ navigation, route }: Props) {
                       pressed && { opacity: 0.94 },
                     ]}
                   >
-                    <View style={styles.cardImageWrap}>
-                      <Image source={c.image} style={styles.cardImage} resizeMode="cover" />
-                      {on ? (
-                        <View style={[styles.checkBadge, { backgroundColor: theme.iconBg }]} pointerEvents="none">
-                          <Ionicons name="checkmark" size={18} color="#fff" />
-                        </View>
-                      ) : null}
-                    </View>
                     <View style={styles.cardBody}>
-                      <View style={[styles.iconSquare, { backgroundColor: theme.iconBg }]}>
-                        <Ionicons name={theme.icon} color="#fff" size={22} />
+                      <View style={styles.cardTopRow}>
+                        <View style={[styles.iconSquare, { backgroundColor: theme.iconBg }]}>
+                          <Ionicons name={theme.icon} color="#fff" size={22} />
+                        </View>
+                        {on ? (
+                          <View style={[styles.checkBadgeInline, { backgroundColor: theme.iconBg }]} pointerEvents="none">
+                            <Ionicons name="checkmark" size={16} color="#fff" />
+                          </View>
+                        ) : (
+                          <View style={styles.checkBadgeInlinePlaceholder} pointerEvents="none" />
+                        )}
                       </View>
-                      <Text style={[styles.cardLabel, { color: theme.label }]} numberOfLines={4}>
+                      <Text style={[styles.cardLabel, { color: on ? "#fff" : "rgba(255,255,255,0.92)" }]} numberOfLines={3}>
                         {c.label}
                       </Text>
                     </View>
@@ -220,7 +227,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(248, 250, 252, 0.72)",
+    backgroundColor: "rgba(18, 48, 72, 0.35)",
   },
   inner: {
     flex: 1,
@@ -271,10 +278,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: "800",
-    color: colors.navy,
+    color: "#fff",
     textAlign: "center",
     marginBottom: 22,
     letterSpacing: -0.5,
+    textShadowColor: "rgba(0,0,0,0.25)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
   categoryRow: {
     flexDirection: "row",
@@ -286,38 +296,26 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 20,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.9)",
+    backgroundColor: "rgba(255,255,255,0.22)",
     shadowColor: "#000",
     shadowOpacity: 0.12,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 5,
   },
-  cardImageWrap: {
-    width: "100%",
-    aspectRatio: 1,
-    position: "relative",
-    backgroundColor: "#E8EEF2",
-  },
-  cardImage: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  checkBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  cardBody: {
+    minHeight: 128,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.95)",
   },
-  cardBody: {
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+  cardTopRow: {
+    width: "100%",
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
   },
   iconSquare: {
     width: 44,
@@ -325,20 +323,37 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
+  },
+  checkBadgeInline: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.95)",
+  },
+  checkBadgeInlinePlaceholder: {
+    width: 28,
+    height: 28,
   },
   cardLabel: {
-    fontSize: 13,
-    fontWeight: "800",
+    width: "100%",
+    fontSize: 14,
+    fontWeight: "900",
     textAlign: "center",
-    lineHeight: 17,
+    lineHeight: 18,
+    letterSpacing: -0.2,
   },
   hint: {
     marginTop: 18,
     textAlign: "center",
-    color: colors.muted2,
+    color: "rgba(255,255,255,0.88)",
     fontSize: 14,
     fontWeight: "600",
+    textShadowColor: "rgba(0,0,0,0.2)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   footerBar: {
     position: "absolute",

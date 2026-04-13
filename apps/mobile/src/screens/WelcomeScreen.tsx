@@ -3,6 +3,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { ImageBackground, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
+import { ScreenBackBar } from "../components/ScreenBackBar";
 import { HERO_BACKGROUND } from "../constants/heroBackground";
 import { colors } from "../theme/colors";
 import { BrandAppIcon } from "../ui/BrandAppIcon";
@@ -12,14 +13,15 @@ type Props = NativeStackScreenProps<RootStackParamList, "Welcome">;
 
 export function WelcomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const padTop = Math.max(insets.top, 16);
   const padBottom = Math.max(insets.bottom, 20);
+  const padTop = Math.max(insets.top, 18);
 
   return (
     <View style={styles.root}>
       <ImageBackground source={HERO_BACKGROUND} style={styles.bgImage} resizeMode="cover">
         <View style={styles.scrim} />
         <View style={[styles.content, { paddingTop: padTop, paddingBottom: padBottom, paddingHorizontal: 24 }]}>
+          <ScreenBackBar tone="light" />
           <View style={styles.hero}>
             <GlassPanel
               style={styles.brandGlassOuter}
@@ -103,7 +105,7 @@ const styles = StyleSheet.create({
   },
   hero: {
     alignItems: "center",
-    paddingTop: 8,
+    paddingTop: 6,
   },
   brandGlassOuter: {
     maxWidth: 360,

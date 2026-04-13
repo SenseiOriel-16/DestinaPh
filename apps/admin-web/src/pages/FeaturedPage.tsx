@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { AdminTablePageSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 type Row = {
@@ -9,20 +10,25 @@ type Row = {
 };
 
 export function FeaturedPage() {
+  const [initialLoad, setInitialLoad] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("businesses")
-      .select("id,name,is_featured,municipalities(name)")
-      .eq("status", "approved")
-      .order("name");
-    if (error) {
-      setMsg(error.message);
-      return;
+    try {
+      const { data, error } = await supabase
+        .from("businesses")
+        .select("id,name,is_featured,municipalities(name)")
+        .eq("status", "approved")
+        .order("name");
+      if (error) {
+        setMsg(error.message);
+        return;
+      }
+      setRows((data as Row[]) ?? []);
+    } finally {
+      setInitialLoad(false);
     }
-    setRows((data as Row[]) ?? []);
   }, []);
 
   useEffect(() => {
@@ -42,18 +48,24 @@ export function FeaturedPage() {
     await load();
   };
 
+  if (initialLoad) {
+    return <AdminTablePageSkeleton />;
+  }
+
   return (
-    <div className="page">
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 24, color: "var(--primary)" }}>
-          Featured destinations
-        </h1>
-        <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>
-          Highlight hero cards on the mobile home experience.
-        </p>
+    <div className="page page-stack admin-tool-page">
+      <header className="admin-page-hero admin-page-hero--compact">
+        <div className="admin-page-hero__text">
+          <p className="admin-page-hero__eyebrow">Spotlight</p>
+          <h1 className="dash-title admin-page-hero__title">Featured destinations</h1>
+          <p className="dash-sub admin-page-hero__sub">
+            Choose which approved listings get hero treatment on the mobile home screen.
+          </p>
+        </div>
+        <div className="admin-page-hero__accent admin-page-hero__accent--feat" aria-hidden />
       </header>
-      {msg && <div className="card" style={{ marginBottom: 12 }}>{msg}</div>}
-      <div className="card" style={{ padding: 0 }}>
+      {msg && <div className="alert-banner alert-banner--error">{msg}</div>}
+      <div className="card card--table-shell" style={{ padding: 0 }}>
         <table className="table">
           <thead>
             <tr>
@@ -74,6 +86,13 @@ export function FeaturedPage() {
                 </td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={3} className="table-empty">
+                  No approved listings to feature yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

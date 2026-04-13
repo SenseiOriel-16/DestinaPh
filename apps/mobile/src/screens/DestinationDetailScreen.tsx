@@ -1,8 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { CompositeScreenProps, useFocusEffect } from "@react-navigation/native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
+  Alert,
   FlatList,
   Image,
   NativeScrollEvent,
@@ -15,16 +19,22 @@ import {
   View,
 } from "react-native";
 import type { RootStackParamList } from "../../App";
+import type { HomeStackParamList, TabParamList } from "../navigation/tabTypes";
 import { useItinerary } from "../context/ItineraryContext";
 import { type AccommodationItem, normalizeAccommodations } from "../lib/accommodations";
 import { formatBusinessAddress, sortedPhotoPublicUrls } from "../lib/businessDisplay";
+import { formatRatingPill, formatRatingSubtitle } from "../lib/businessRatingDisplay";
 import { supabase } from "../lib/supabase";
+import { trackListingIntentVisit } from "../lib/trackListingMetric";
 import { colors } from "../theme/colors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MapPinPreview } from "../components/MapPinPreview";
 import { openGoogleMapsDirections, openTurnByTurnNavigation } from "../lib/mapExternal";
 
-type Props = NativeStackScreenProps<RootStackParamList, "Detail">;
+type Props = CompositeScreenProps<
+  NativeStackScreenProps<HomeStackParamList, "Detail">,
+  CompositeScreenProps<BottomTabScreenProps<TabParamList>, NativeStackScreenProps<RootStackParamList>>
+>;
 
 type BusinessRow = {
   name: string;
@@ -83,6 +93,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const { id } = route.params;
   const { width: screenW } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const { addStop } = useItinerary();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -96,11 +107,18 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const [isPremium, setIsPremium] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [favorited, setFavorited] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [aboutExpanded, setAboutExpanded] = useState(false);
   const [accommodationsOpen, setAccommodationsOpen] = useState(false);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [entranceLine, setEntranceLine] = useState<string | null>(null);
   const [accommodations, setAccommodations] = useState<AccommodationItem[]>([]);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [ratingAvg, setRatingAvg] = useState<number | null>(null);
+  const [ratingCount, setRatingCount] = useState(0);
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const [myStars, setMyStars] = useState<number | null>(null);
+  const [ratingBusy, setRatingBusy] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -121,6 +139,9 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           latitude,
           longitude,
           is_premium,
+          owner_id,
+          rating_average,
+          rating_count,
           tags,
           accommodations,
           entrance_fee_pesos,
@@ -145,7 +166,15 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
       }
 
       if (data) {
-        const row = data as unknown as BusinessRow;
+        const row = data as unknown as BusinessRow & {
+          owner_id?: string;
+          rating_average?: number | null;
+          rating_count?: number | null;
+        };
+        setOwnerId(typeof row.owner_id === "string" ? row.owner_id : null);
+        const ra = row.rating_average;
+        setRatingAvg(ra != null && !Number.isNaN(Number(ra)) ? Number(ra) : null);
+        setRatingCount(Math.max(0, Math.floor(Number(row.rating_count ?? 0))));
         setTitle(row.name);
         const long = row.description?.trim() || "";
         const short = row.short_description?.trim() || "";
@@ -170,6 +199,9 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         setIsPremium(false);
         setEntranceLine(null);
         setAccommodations([]);
+        setOwnerId(null);
+        setRatingAvg(null);
+        setRatingCount(0);
       }
     })();
   }, [id]);
@@ -200,8 +232,126 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
     void refreshDistance();
   }, [refreshDistance]);
 
+  const loadFavorite = useCallback(async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      setFavorited(false);
+      return;
+    }
+    const { data } = await supabase
+      .from("user_favorites")
+      .select("id")
+      .eq("user_id", session.user.id)
+      .eq("business_id", id)
+      .maybeSingle();
+    setFavorited(Boolean(data));
+  }, [id]);
+
+  const loadMyRating = useCallback(async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const sid = session?.user?.id ?? null;
+    setSessionUserId(sid);
+    if (!sid) {
+      setMyStars(null);
+      return;
+    }
+    const { data } = await supabase
+      .from("business_ratings")
+      .select("stars")
+      .eq("business_id", id)
+      .eq("user_id", sid)
+      .maybeSingle();
+    setMyStars(typeof data?.stars === "number" ? data.stars : null);
+  }, [id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadFavorite();
+      void loadMyRating();
+    }, [loadFavorite, loadMyRating]),
+  );
+
+  const submitRating = async (stars: number) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) {
+      Alert.alert("Ratings", "Sign in to rate this destination.");
+      return;
+    }
+    if (ownerId && uid === ownerId) return;
+    setRatingBusy(true);
+    try {
+      const { error } = await supabase.from("business_ratings").upsert(
+        { business_id: id, user_id: uid, stars },
+        { onConflict: "business_id,user_id" },
+      );
+      if (error) {
+        Alert.alert("Ratings", error.message);
+        return;
+      }
+      setMyStars(stars);
+      const { data: biz } = await supabase.from("businesses").select("rating_average, rating_count").eq("id", id).maybeSingle();
+      if (biz) {
+        const b = biz as { rating_average?: number | null; rating_count?: number | null };
+        const ra = b.rating_average;
+        setRatingAvg(ra != null && !Number.isNaN(Number(ra)) ? Number(ra) : null);
+        setRatingCount(Math.max(0, Math.floor(Number(b.rating_count ?? 0))));
+      }
+    } finally {
+      setRatingBusy(false);
+    }
+  };
+
+  const toggleFavorite = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      Alert.alert("Favorites", "Sign in to save this place to your favorites.");
+      return;
+    }
+    setFavoriteBusy(true);
+    try {
+      if (favorited) {
+        const { error } = await supabase
+          .from("user_favorites")
+          .delete()
+          .eq("user_id", session.user.id)
+          .eq("business_id", id);
+        if (error) {
+          Alert.alert("Favorites", error.message);
+          return;
+        }
+        setFavorited(false);
+      } else {
+        const { error } = await supabase.from("user_favorites").insert({
+          user_id: session.user.id,
+          business_id: id,
+        });
+        if (error) {
+          if (error.code === "23505") {
+            setFavorited(true);
+            return;
+          }
+          Alert.alert("Favorites", error.message);
+          return;
+        }
+        setFavorited(true);
+      }
+    } finally {
+      setFavoriteBusy(false);
+    }
+  };
+
   const addItinerary = () => {
     if (lat == null || lng == null) return;
+    trackListingIntentVisit(id);
     addStop({
       id,
       name: title,
@@ -214,6 +364,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
 
   const openInAppMap = () => {
     if (lat == null || lng == null) return;
+    trackListingIntentVisit(id);
     navigation.navigate("DestinationMap", { title, destLat: lat, destLng: lng });
   };
 
@@ -238,7 +389,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         style={styles.mainScroll}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: insets.bottom + 28 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 28 + tabBarHeight }}
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.heroHost, { height: heroH }]}>
@@ -279,10 +430,15 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
             </Pressable>
             <Pressable
               style={styles.heroIconBtn}
-              onPress={() => setFavorited((v) => !v)}
+              onPress={() => void toggleFavorite()}
+              disabled={favoriteBusy}
               accessibilityLabel={favorited ? "Remove favorite" : "Add favorite"}
             >
-              <Ionicons name={favorited ? "heart" : "heart-outline"} size={22} color={favorited ? colors.danger : colors.navy} />
+              <Ionicons
+                name={favorited ? "heart" : "heart-outline"}
+                size={22}
+                color={favorited ? colors.danger : colors.navy}
+              />
             </Pressable>
           </View>
 
@@ -301,9 +457,10 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
             <Text style={styles.title}>{title}</Text>
             <View style={styles.ratingPill}>
               <Ionicons name="star" size={14} color={colors.star} />
-              <Text style={styles.ratingText}>Soon</Text>
+              <Text style={styles.ratingText}>{formatRatingPill(ratingAvg, ratingCount)}</Text>
             </View>
           </View>
+          <Text style={styles.ratingSub}>{formatRatingSubtitle(ratingAvg, ratingCount)}</Text>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagRow}>
             {categoryName ? (
@@ -317,6 +474,38 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
               </View>
             ))}
       </ScrollView>
+
+          {ownerId && sessionUserId && sessionUserId === ownerId ? (
+            <Text style={styles.rateHintOwn}>Your listing — guests can leave star ratings here.</Text>
+          ) : !sessionUserId ? (
+            <Text style={styles.rateHint}>Sign in to leave a star rating for this place.</Text>
+          ) : (
+            <View style={styles.rateBlock}>
+              <Text style={styles.sectionTitle}>Your rating</Text>
+              <View style={styles.starRow}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Pressable
+                    key={s}
+                    onPress={() => void submitRating(s)}
+                    disabled={ratingBusy}
+                    hitSlop={6}
+                    accessibilityLabel={`${s} star${s === 1 ? "" : "s"}`}
+                  >
+                    <Ionicons
+                      name={(myStars ?? 0) >= s ? "star" : "star-outline"}
+                      size={30}
+                      color={(myStars ?? 0) >= s ? colors.star : colors.muted2}
+                    />
+                  </Pressable>
+                ))}
+              </View>
+              {myStars != null ? (
+                <Text style={styles.rateSaved}>Saved · tap another star to change</Text>
+              ) : (
+                <Text style={styles.rateSaved}>Tap the stars to submit</Text>
+              )}
+            </View>
+          )}
 
           <View style={styles.locRow}>
             <Ionicons name="location-outline" size={18} color={colors.muted2} />
@@ -435,6 +624,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
               style={[styles.navPrimary, lat == null && styles.navDisabled]}
               onPress={() => {
                 if (lat == null || lng == null) return;
+                trackListingIntentVisit(id);
                 void openTurnByTurnNavigation(lat, lng);
               }}
               disabled={lat == null || lng == null}
@@ -449,6 +639,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
               style={[styles.navSecondary, lat == null && styles.navDisabled]}
               onPress={() => {
                 if (lat == null || lng == null) return;
+                trackListingIntentVisit(id);
                 void openGoogleMapsDirections(lat, lng);
               }}
               disabled={lat == null || lng == null}
@@ -490,9 +681,12 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           {isPremium && (
             <Pressable
               style={styles.ctaSecondary}
-              onPress={() => navigation.navigate("BookingRequest", { businessId: id })}
+              onPress={() => {
+                trackListingIntentVisit(id);
+                navigation.navigate("BookingRequest", { businessId: id });
+              }}
             >
-              <Text style={styles.ctaSecondaryText}>Booking / reservation</Text>
+              <Text style={styles.ctaSecondaryText}>Reserve now · 50% down</Text>
             </Pressable>
           )}
         </View>
@@ -652,6 +846,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   ratingText: { fontSize: 12, fontWeight: "700", color: colors.navy },
+  ratingSub: { marginTop: 6, fontSize: 12, fontWeight: "600", color: colors.muted },
+  rateBlock: { marginTop: 16 },
+  starRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
+  rateSaved: { marginTop: 8, fontSize: 12, color: colors.muted2, fontWeight: "500" },
+  rateHint: { marginTop: 14, fontSize: 13, color: colors.muted, fontWeight: "500" },
+  rateHintOwn: { marginTop: 14, fontSize: 13, color: colors.primaryTeal, fontWeight: "600" },
   tagRow: { flexDirection: "row", gap: 8, marginTop: 14, paddingRight: 8 },
   chip: {
     backgroundColor: colors.chipIdle,

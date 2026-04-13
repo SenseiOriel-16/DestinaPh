@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { OwnerRoute } from "./components/OwnerRoute";
+import { OwnerShellSkeleton } from "./components/PageSkeletons";
 import { OwnerLayout } from "./layouts/OwnerLayout";
 
 const LoginPage = lazy(() =>
@@ -27,13 +28,15 @@ const UpgradePage = lazy(() =>
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
+const OwnerReservationsPage = lazy(() =>
+  import("./pages/OwnerReservationsPage").then((m) => ({ default: m.OwnerReservationsPage })),
+);
+const PaymentAccountsPage = lazy(() =>
+  import("./pages/PaymentAccountsPage").then((m) => ({ default: m.PaymentAccountsPage })),
+);
 
 function RouteFallback() {
-  return (
-    <div className="owner-route-loading">
-      <div className="card">Loading…</div>
-    </div>
-  );
+  return <OwnerShellSkeleton />;
 }
 
 export default function App() {
@@ -48,6 +51,8 @@ export default function App() {
             <Route path="listings" element={<ListingsPage />} />
             <Route path="listings/new" element={<ListingEditorPage />} />
             <Route path="listings/:id" element={<ListingEditorPage />} />
+            <Route path="reservations" element={<OwnerReservationsPage />} />
+            <Route path="payment-accounts" element={<PaymentAccountsPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="upgrade" element={<UpgradePage />} />
             <Route path="settings" element={<SettingsPage />} />

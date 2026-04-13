@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AuthVisual } from "../components/AuthVisual";
+import { AuthSplitLayout } from "../components/AuthSplitLayout";
 import { supabase } from "../lib/supabaseClient";
 
 /**
@@ -48,10 +48,8 @@ export function RegisterAdminPage() {
   };
 
   return (
-    <div className="auth-split">
-      <AuthVisual />
-      <div className="auth-split__panel">
-        <div className="auth-card">
+    <AuthSplitLayout>
+      <div className="auth-card">
           <h2>Create Account</h2>
           <p className="auth-lead">Register a new admin account.</p>
           <form onSubmit={onSubmit}>
@@ -123,7 +121,6 @@ export function RegisterAdminPage() {
             Already have an account? <Link to="/login">Sign in here</Link>
           </p>
         </div>
-      </div>
-    </div>
+    </AuthSplitLayout>
   );
 }

@@ -13,13 +13,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
-import type { TabParamList } from "../navigation/MainTabs";
+import type { BookingsStackParamList, TabParamList } from "../navigation/tabTypes";
+import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 
 type Props = CompositeScreenProps<
-  BottomTabScreenProps<TabParamList, "Bookings">,
-  NativeStackScreenProps<RootStackParamList>
+  NativeStackScreenProps<BookingsStackParamList, "BookingsMain">,
+  CompositeScreenProps<BottomTabScreenProps<TabParamList, "Bookings">, NativeStackScreenProps<RootStackParamList>>
 >;
 
 type Row = {
@@ -40,7 +41,8 @@ const PLACE_IMG =
   "https://images.unsplash.com/photo-1540541338287-41700207dee6?auto=format&fit=crop&w=400&q=60";
 
 function statusForTab(tab: TabFilter, status: string): boolean {
-  if (tab === "upcoming") return status === "requested" || status === "confirmed";
+  if (tab === "upcoming")
+    return status === "requested" || status === "pending_review" || status === "confirmed";
   if (tab === "completed") return false;
   return status === "cancelled";
 }
@@ -48,6 +50,8 @@ function statusForTab(tab: TabFilter, status: string): boolean {
 function badgeStyle(status: string) {
   if (status === "confirmed") return { bg: colors.successBg, fg: colors.successText, label: "Confirmed" };
   if (status === "cancelled") return { bg: colors.border, fg: colors.muted2, label: "Cancelled" };
+  if (status === "pending_review")
+    return { bg: colors.warningBg, fg: colors.warningText, label: "Awaiting host" };
   return { bg: colors.warningBg, fg: colors.warningText, label: "Pending" };
 }
 
@@ -92,8 +96,11 @@ export function BookingsScreen({ navigation }: Props) {
   );
 
   return (
-    <View style={[styles.page, { paddingTop: Math.max(insets.top, 12) }]}>
-      <Text style={styles.title}>My Bookings</Text>
+    <View style={[styles.page, { paddingTop: Math.max(insets.top, 10) }]}>
+      <View style={styles.titleRow}>
+        <TabInlineBackButton />
+        <Text style={styles.title}>My Bookings</Text>
+      </View>
 
       <View style={styles.tabs}>
         {(
@@ -174,17 +181,24 @@ export function BookingsScreen({ navigation }: Props) {
   );
 }
 
+
 const styles = StyleSheet.create({
   page: {
     flex: 1,
     backgroundColor: colors.pageBg,
     paddingHorizontal: 20,
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 16,
+  },
   title: {
     fontSize: 26,
     fontWeight: "800",
     color: colors.navy,
-    marginBottom: 16,
+    flex: 1,
   },
   tabs: {
     flexDirection: "row",

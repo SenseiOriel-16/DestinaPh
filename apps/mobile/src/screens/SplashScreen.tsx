@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import type { RootStackParamList } from "../../App";
 import { isOnboardingComplete } from "../lib/onboardingStorage";
-import { LogoMark } from "../ui/LogoMark";
+import { BrandAppIcon } from "../ui/BrandAppIcon";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Splash">;
 
@@ -29,7 +29,7 @@ export function SplashScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <LogoMark size={120} />
+      <BrandAppIcon size={120} />
       <Text style={styles.title}>DestinaPH</Text>
       <Text style={styles.tagline}>Discover Destinations. Plan Smarter.</Text>
       <ActivityIndicator style={styles.spinner} size="large" color="rgba(255,255,255,0.9)" />

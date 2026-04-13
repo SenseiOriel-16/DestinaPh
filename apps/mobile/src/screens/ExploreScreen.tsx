@@ -15,14 +15,16 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
-import type { TabParamList } from "../navigation/MainTabs";
+import type { ExploreStackParamList, TabParamList } from "../navigation/tabTypes";
+import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { firstPhotoPublicUrl, formatBusinessAddress } from "../lib/businessDisplay";
+import { formatRatingPill } from "../lib/businessRatingDisplay";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 
 type Props = CompositeScreenProps<
-  BottomTabScreenProps<TabParamList, "Explore">,
-  NativeStackScreenProps<RootStackParamList>
+  NativeStackScreenProps<ExploreStackParamList, "ExploreMain">,
+  CompositeScreenProps<BottomTabScreenProps<TabParamList, "Explore">, NativeStackScreenProps<RootStackParamList>>
 >;
 
 type Row = {
@@ -31,6 +33,8 @@ type Row = {
   description: string | null;
   status: string;
   address_line: string | null;
+  rating_average?: number | null;
+  rating_count?: number | null;
   categories: { slug: string; name: string } | null;
   municipalities: { id: string; name: string } | null;
   provinces: { name: string } | null;
@@ -52,7 +56,6 @@ export function ExploreScreen({ navigation, route }: Props) {
   const [category, setCategory] = useState<string>("all");
   const [municipality, setMunicipality] = useState<string>("all");
   const [search, setSearch] = useState("");
-  const [showTownFilters, setShowTownFilters] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -61,17 +64,42 @@ export function ExploreScreen({ navigation, route }: Props) {
     }, [route.params?.categorySlug]),
   );
 
+  /** Distinct municipalities that actually have at least one approved listing (from same query as Explore list). */
+  function municipalitiesFromRows(list: Row[]): { id: string; name: string }[] {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const row of list) {
+      const raw = row.municipalities as
+        | { id: string; name: string }
+        | { id: string; name: string }[]
+        | null
+        | undefined;
+      const m = Array.isArray(raw) ? raw[0] : raw;
+      if (m?.id && m.name) map.set(m.id, { id: m.id, name: m.name });
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }
+
   const load = useCallback(async () => {
     const { data, error } = await supabase
       .from("businesses")
       .select(
-        "id,name,description,status,address_line,categories(slug,name),municipalities(id,name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
+        "id,name,description,status,address_line,rating_average,rating_count,categories(slug,name),municipalities(id,name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
       )
       .eq("status", "approved")
       .order("sort_order", { ascending: true, foreignTable: "business_photos" });
-    if (!error && data) setRows(data as unknown as Row[]);
-    const { data: munis } = await supabase.from("municipalities").select("id,name").order("name");
-    setMunicipalities((munis as { id: string; name: string }[]) ?? []);
+    if (!error && data) {
+      const list = data as unknown as Row[];
+      const munisList = municipalitiesFromRows(list);
+      setRows(list);
+      setMunicipalities(munisList);
+      setMunicipality((prev) =>
+        prev !== "all" && !munisList.some((m) => m.id === prev) ? "all" : prev,
+      );
+    } else {
+      setRows([]);
+      setMunicipalities([]);
+      setMunicipality("all");
+    }
   }, []);
 
   useFocusEffect(
@@ -82,8 +110,8 @@ export function ExploreScreen({ navigation, route }: Props) {
 
   const locationLabel =
     municipality === "all"
-      ? municipalities.find((m) => m.name.toLowerCase().includes("naga"))?.name ?? "Naga City"
-      : municipalities.find((m) => m.id === municipality)?.name ?? "Town";
+      ? "All municipalities"
+      : municipalities.find((m) => m.id === municipality)?.name ?? "Municipality";
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -101,14 +129,14 @@ export function ExploreScreen({ navigation, route }: Props) {
 
   const listHeader = (
     <View style={{ paddingBottom: 8 }}>
-      <View style={[styles.screenHead, { paddingTop: Math.max(insets.top, 10) }]}>
+      <View style={[styles.screenHead, { paddingTop: Math.max(insets.top, 8) }]}>
+        <TabInlineBackButton />
         <View style={{ flex: 1 }}>
           <Text style={styles.pageTitle}>Explore</Text>
-          <Pressable style={styles.locRow} onPress={() => setShowTownFilters((v) => !v)}>
+          <View style={styles.locRow}>
             <Ionicons name="location" size={18} color={colors.accentGreen} />
             <Text style={styles.locText}>{locationLabel}</Text>
-            <Ionicons name="chevron-down" size={16} color={colors.muted2} />
-          </Pressable>
+          </View>
         </View>
         <Pressable style={styles.iconBtn} hitSlop={8}>
           <Ionicons name="notifications-outline" size={22} color={colors.muted2} />
@@ -119,20 +147,16 @@ export function ExploreScreen({ navigation, route }: Props) {
         <View style={styles.search}>
           <Ionicons name="search-outline" size={20} color={colors.muted} />
           <TextInput
-            placeholder="Search destinations..."
+            placeholder="Maghanap ng mga destinasyon…"
             placeholderTextColor={colors.muted}
             value={search}
             onChangeText={setSearch}
             style={styles.searchInput}
           />
         </View>
-        <Pressable
-          style={styles.filterCircle}
-          onPress={() => setShowTownFilters((s) => !s)}
-          accessibilityLabel="Town filters"
-        >
+        <View style={styles.filterCircle} accessibilityLabel="Filters">
           <Ionicons name="options-outline" size={22} color={colors.white} />
-        </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -151,23 +175,21 @@ export function ExploreScreen({ navigation, route }: Props) {
         ))}
       </ScrollView>
 
-      {showTownFilters && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[styles.chipScroll, { paddingBottom: 8 }]}
-        >
-          {[{ id: "all", name: "All towns" }, ...municipalities].map((m) => (
-            <Pressable
-              key={m.id}
-              onPress={() => setMunicipality(m.id)}
-              style={[styles.chipSm, municipality === m.id && styles.chipOn]}
-            >
-              <Text style={[styles.chipTextSm, municipality === m.id && styles.chipTextOn]}>{m.name}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      )}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.chipScroll, { paddingBottom: 8 }]}
+      >
+        {[{ id: "all", name: "All towns" }, ...municipalities].map((m) => (
+          <Pressable
+            key={m.id}
+            onPress={() => setMunicipality(m.id)}
+            style={[styles.chipSm, municipality === m.id && styles.chipOn]}
+          >
+            <Text style={[styles.chipTextSm, municipality === m.id && styles.chipTextOn]}>{m.name}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
 
       <Text style={styles.listHeading}>Popular Near You</Text>
     </View>
@@ -208,8 +230,10 @@ export function ExploreScreen({ navigation, route }: Props) {
               </Text>
               <Text style={styles.rating}>
                 <Ionicons name="star" size={14} color={colors.star} />{" "}
-                <Text style={styles.ratingStrong}>4.8</Text>
-                <Text style={styles.reviews}> (120)</Text>
+                <Text style={styles.ratingStrong}>{formatRatingPill(item.rating_average, item.rating_count)}</Text>
+                {item.rating_count != null && item.rating_count > 0 ? (
+                  <Text style={styles.reviews}> ({item.rating_count})</Text>
+                ) : null}
               </Text>
             </View>
           </Pressable>
@@ -226,7 +250,7 @@ export function ExploreScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   screenHead: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 6,
   },
@@ -291,7 +315,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   chip: {
-    borderRadius: 999,
+    borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 10,
     backgroundColor: colors.chipIdle,
@@ -308,7 +332,7 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   chipSm: {
-    borderRadius: 999,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: colors.chipIdle,

@@ -14,25 +14,26 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
-import type { TabParamList } from "../navigation/MainTabs";
+import type { HomeStackParamList, TabParamList } from "../navigation/tabTypes";
+import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { HERO_BACKGROUND } from "../constants/heroBackground";
 import { TRAVEL_CATEGORIES } from "../data/travelCategories";
 import { firstPhotoPublicUrl, formatBusinessAddress } from "../lib/businessDisplay";
+import { formatRatingPill } from "../lib/businessRatingDisplay";
 import { formatDistanceAway, haversineKm, type LatLng } from "../lib/geo";
 import { getInterestSlugs } from "../lib/onboardingStorage";
 import { supabase } from "../lib/supabase";
-import { LogoMark } from "../ui/LogoMark";
+import { BrandAppIcon } from "../ui/BrandAppIcon";
 import { colors } from "../theme/colors";
 
 type Props = CompositeScreenProps<
-  BottomTabScreenProps<TabParamList, "Home">,
-  NativeStackScreenProps<RootStackParamList>
+  NativeStackScreenProps<HomeStackParamList, "HomeMain">,
+  CompositeScreenProps<BottomTabScreenProps<TabParamList, "Home">, NativeStackScreenProps<RootStackParamList>>
 >;
 
 type Featured = {
@@ -40,6 +41,8 @@ type Featured = {
   name: string;
   description: string | null;
   address_line: string | null;
+  rating_average?: number | null;
+  rating_count?: number | null;
   municipalities: { name: string } | null;
   provinces: { name: string } | null;
   barangays: { name: string } | null;
@@ -63,7 +66,6 @@ export function HomeScreen({ navigation }: Props) {
   const [featured, setFeatured] = useState<Featured[]>([]);
   const [recommendedNear, setRecommendedNear] = useState<NearRow[]>([]);
   const [hasLocation, setHasLocation] = useState(false);
-  const [query, setQuery] = useState("");
   const heroCtaPulse = useRef(new Animated.Value(1)).current;
 
   const categoryCardWidth = useMemo(() => {
@@ -78,7 +80,7 @@ export function HomeScreen({ navigation }: Props) {
     const { data } = await supabase
       .from("businesses")
       .select(
-        "id,name,description,address_line,municipalities(name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
+        "id,name,description,address_line,rating_average,rating_count,municipalities(name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
       )
       .eq("status", "approved")
       .eq("is_featured", true)
@@ -112,7 +114,7 @@ export function HomeScreen({ navigation }: Props) {
     const { data } = await supabase
       .from("businesses")
       .select(
-        "id,name,description,address_line,latitude,longitude,categories(slug,name),municipalities(name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
+        "id,name,description,address_line,latitude,longitude,rating_average,rating_count,categories(slug,name),municipalities(name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
       )
       .eq("status", "approved")
       .order("sort_order", { ascending: true, foreignTable: "business_photos" });
@@ -151,18 +153,7 @@ export function HomeScreen({ navigation }: Props) {
     }, [loadRecommended]),
   );
 
-  const filteredFeatured = useMemo(() => {
-    if (!query.trim()) return featured;
-    const q = query.toLowerCase();
-    return featured.filter(
-      (f) =>
-        f.name.toLowerCase().includes(q) ||
-        (f.description ?? "").toLowerCase().includes(q) ||
-        (f.municipalities?.name ?? "").toLowerCase().includes(q),
-    );
-  }, [featured, query]);
-
-  const heroTarget = filteredFeatured[0];
+  const heroTarget = featured[0];
 
   useEffect(() => {
     const anim = Animated.loop(
@@ -187,14 +178,14 @@ export function HomeScreen({ navigation }: Props) {
 
   return (
     <ScrollView
-      style={[styles.page, { paddingTop: Math.max(insets.top, 12) }]}
+      style={[styles.page, { paddingTop: Math.max(insets.top, 18) }]}
       contentContainerStyle={{ paddingBottom: 28 }}
       showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
     >
       <View style={styles.topRow}>
+        <TabInlineBackButton />
         <View style={styles.brandRow}>
-          <LogoMark size={48} />
+          <BrandAppIcon size={48} />
           <View style={styles.brandText}>
             <Text style={styles.brandName}>DestinaPH</Text>
             <Text style={styles.brandTag}>Discover Destinations. Plan Smarter.</Text>
@@ -203,26 +194,6 @@ export function HomeScreen({ navigation }: Props) {
         <Pressable style={styles.bell} hitSlop={8}>
           <Ionicons name="notifications-outline" size={22} color={colors.muted2} />
           <View style={styles.bellDot} />
-        </Pressable>
-      </View>
-
-      <View style={styles.searchRow}>
-        <View style={styles.search}>
-          <Ionicons name="search-outline" size={20} color={colors.muted} />
-          <TextInput
-            placeholder="Search destinations, resorts, foods..."
-            placeholderTextColor={colors.muted}
-            value={query}
-            onChangeText={setQuery}
-            style={styles.searchInput}
-          />
-        </View>
-        <Pressable
-          style={styles.filterBtn}
-          onPress={() => navigation.navigate("Explore")}
-          accessibilityLabel="Open filters on Explore"
-        >
-          <Ionicons name="options-outline" size={22} color={colors.navy} />
         </Pressable>
       </View>
 
@@ -267,7 +238,9 @@ export function HomeScreen({ navigation }: Props) {
             accessibilityRole="button"
             accessibilityLabel={`${c.label}. Open listings in this category.`}
             android_ripple={null}
-            onPress={() => navigation.navigate("Explore", { categorySlug: c.slug })}
+            onPress={() =>
+              navigation.navigate("Explore", { screen: "ExploreMain", params: { categorySlug: c.slug } })
+            }
             style={({ pressed }) => [
               styles.categoryCardWrap,
               {
@@ -340,6 +313,10 @@ export function HomeScreen({ navigation }: Props) {
                       {mun}
                     </Text>
                   </View>
+                  <View style={styles.nearRatingRow}>
+                    <Ionicons name="star" size={13} color={colors.star} />
+                    <Text style={styles.nearRatingText}>{formatRatingPill(item.rating_average, item.rating_count)}</Text>
+                  </View>
                 </Pressable>
               );
             })}
@@ -355,7 +332,7 @@ export function HomeScreen({ navigation }: Props) {
       </View>
       <FlatList
         horizontal
-        data={filteredFeatured}
+        data={featured}
         keyExtractor={(item) => item.id}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: 14, paddingRight: 8 }}
@@ -364,7 +341,7 @@ export function HomeScreen({ navigation }: Props) {
           return (
           <Pressable onPress={() => navigation.navigate("Detail", { id: item.id })} style={styles.destCard}>
             {uri ? (
-              <Image source={{ uri }} style={styles.destImg} />
+              <Image source={{ uri }} style={styles.destImg} resizeMode="cover" />
             ) : (
               <View style={[styles.destImg, styles.destImgEmpty]}>
                 <Ionicons name="image-outline" size={22} color={colors.muted2} />
@@ -378,7 +355,7 @@ export function HomeScreen({ navigation }: Props) {
             </Text>
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={14} color={colors.star} />
-              <Text style={styles.ratingNum}>4.8</Text>
+              <Text style={styles.ratingNum}>{formatRatingPill(item.rating_average, item.rating_count)}</Text>
             </View>
           </Pressable>
           );
@@ -397,7 +374,7 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     marginBottom: 18,
   },
   brandRow: {
@@ -440,39 +417,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger,
     borderWidth: 2,
     borderColor: colors.white,
-  },
-  searchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 20,
-  },
-  search: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.white,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 15,
-    color: colors.text,
-  },
-  filterBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   hero: {
     height: 220,
@@ -595,7 +539,7 @@ const styles = StyleSheet.create({
   },
   destImg: {
     width: 132,
-    height: 132,
+    aspectRatio: 16 / 10,
     borderRadius: 16,
     backgroundColor: colors.border,
   },
@@ -639,7 +583,7 @@ const styles = StyleSheet.create({
   },
   nearImg: {
     width: "100%",
-    height: 152,
+    aspectRatio: 16 / 10,
     borderRadius: 14,
     backgroundColor: colors.border,
   },
@@ -666,5 +610,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: colors.muted2,
+  },
+  nearRatingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 6,
+  },
+  nearRatingText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.navy,
   },
 });

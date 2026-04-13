@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
+import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useItinerary } from "../context/ItineraryContext";
@@ -88,9 +89,12 @@ export function ItineraryScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.pageBg }}
-      contentContainerStyle={{ paddingBottom: 28, paddingHorizontal: 20 }}
+      contentContainerStyle={{ paddingBottom: 28, paddingHorizontal: 20, paddingTop: Math.max(insets.top, 8) }}
     >
-      <Text style={[styles.kicker, { marginTop: Math.max(insets.top, 10) }]}>ITINERARY</Text>
+      <View style={styles.kickerRow}>
+        <TabInlineBackButton />
+        <Text style={styles.kicker}>ITINERARY</Text>
+      </View>
       <Text style={styles.title}>Itinerary</Text>
 
       <View style={styles.tabs}>
@@ -194,6 +198,12 @@ export function ItineraryScreen() {
 }
 
 const styles = StyleSheet.create({
+  kickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    marginBottom: 2,
+  },
   kicker: {
     fontSize: 11,
     fontWeight: "800",

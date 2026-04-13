@@ -9,6 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { AdminDashboardSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 type Stat = { clients: number; businesses: number; pending: number; destinations: number };
@@ -58,6 +59,7 @@ function pctDelta(current: number, previous: number): string {
 }
 
 export function DashboardPage() {
+  const [pageReady, setPageReady] = useState(false);
   const [stats, setStats] = useState<Stat>({
     clients: 0,
     businesses: 0,
@@ -78,82 +80,90 @@ export function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - 14);
-      const sinceIso = since.toISOString();
-      const t7 = Date.now() - 7 * 864e5;
-      const t14 = Date.now() - 14 * 864e5;
+    void (async () => {
+      try {
+        const since = new Date();
+        since.setDate(since.getDate() - 14);
+        const sinceIso = since.toISOString();
+        const t7 = Date.now() - 7 * 864e5;
+        const t14 = Date.now() - 14 * 864e5;
 
-      const [
-        { count: clients },
-        { count: businesses },
-        { count: pending },
-        { count: approved },
-        { data: consumerRows },
-        { data: bizRows },
-        { data: recentRows },
-      ] = await Promise.all([
-        supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "consumer"),
-        supabase.from("businesses").select("*", { count: "exact", head: true }),
-        supabase
-          .from("profiles")
-          .select("*", { count: "exact", head: true })
-          .eq("role", "business_owner")
-          .eq("owner_approval_status", "pending"),
-        supabase
-          .from("businesses")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "approved"),
-        supabase.from("profiles").select("created_at").eq("role", "consumer").gte("created_at", sinceIso),
-        supabase.from("businesses").select("created_at").gte("created_at", sinceIso),
-        supabase
-          .from("businesses")
-          .select("id,name,status,created_at")
-          .order("created_at", { ascending: false })
-          .limit(6),
-      ]);
+        const [
+          { count: clients },
+          { count: businesses },
+          { count: pending },
+          { count: approved },
+          { data: consumerRows },
+          { data: bizRows },
+          { data: recentRows },
+        ] = await Promise.all([
+          supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "consumer"),
+          supabase.from("businesses").select("*", { count: "exact", head: true }),
+          supabase
+            .from("profiles")
+            .select("*", { count: "exact", head: true })
+            .eq("role", "business_owner")
+            .eq("owner_approval_status", "pending"),
+          supabase
+            .from("businesses")
+            .select("*", { count: "exact", head: true })
+            .eq("status", "approved"),
+          supabase.from("profiles").select("created_at").eq("role", "consumer").gte("created_at", sinceIso),
+          supabase.from("businesses").select("created_at").gte("created_at", sinceIso),
+          supabase
+            .from("businesses")
+            .select("id,name,status,created_at")
+            .order("created_at", { ascending: false })
+            .limit(6),
+        ]);
 
-      const cRows = (consumerRows as { created_at: string }[]) ?? [];
-      const bRows = (bizRows as { created_at: string }[]) ?? [];
-      const cSeries = bucketRows(cRows, labels);
-      const bSeries = bucketRows(bRows, labels);
-      const chart = labels.map((name, i) => ({
-        name,
-        Clients: cSeries[i] ?? 0,
-        Businesses: bSeries[i] ?? 0,
-      }));
+        const cRows = (consumerRows as { created_at: string }[]) ?? [];
+        const bRows = (bizRows as { created_at: string }[]) ?? [];
+        const cSeries = bucketRows(cRows, labels);
+        const bSeries = bucketRows(bRows, labels);
+        const chart = labels.map((name, i) => ({
+          name,
+          Clients: cSeries[i] ?? 0,
+          Businesses: bSeries[i] ?? 0,
+        }));
 
-      const lastWeekC = cRows.filter((r) => new Date(r.created_at).getTime() >= t7).length;
-      const prevWeekC = cRows.filter((r) => {
-        const t = new Date(r.created_at).getTime();
-        return t < t7 && t >= t14;
-      }).length;
-      const lastWeekB = bRows.filter((r) => new Date(r.created_at).getTime() >= t7).length;
-      const prevWeekB = bRows.filter((r) => {
-        const t = new Date(r.created_at).getTime();
-        return t < t7 && t >= t14;
-      }).length;
+        const lastWeekC = cRows.filter((r) => new Date(r.created_at).getTime() >= t7).length;
+        const prevWeekC = cRows.filter((r) => {
+          const t = new Date(r.created_at).getTime();
+          return t < t7 && t >= t14;
+        }).length;
+        const lastWeekB = bRows.filter((r) => new Date(r.created_at).getTime() >= t7).length;
+        const prevWeekB = bRows.filter((r) => {
+          const t = new Date(r.created_at).getTime();
+          return t < t7 && t >= t14;
+        }).length;
 
-      if (cancelled) return;
-      setStats({
-        clients: clients ?? 0,
-        businesses: businesses ?? 0,
-        pending: pending ?? 0,
-        destinations: approved ?? 0,
-      });
-      setDeltas({
-        clients: pctDelta(lastWeekC, prevWeekC),
-        businesses: pctDelta(lastWeekB, prevWeekB),
-        destinations: pctDelta(lastWeekB, Math.max(1, prevWeekB)),
-      });
-      setChartData(chart);
-      setRecent((recentRows as Recent[]) ?? []);
+        if (cancelled) return;
+        setStats({
+          clients: clients ?? 0,
+          businesses: businesses ?? 0,
+          pending: pending ?? 0,
+          destinations: approved ?? 0,
+        });
+        setDeltas({
+          clients: pctDelta(lastWeekC, prevWeekC),
+          businesses: pctDelta(lastWeekB, prevWeekB),
+          destinations: pctDelta(lastWeekB, Math.max(1, prevWeekB)),
+        });
+        setChartData(chart);
+        setRecent((recentRows as Recent[]) ?? []);
+      } finally {
+        if (!cancelled) setPageReady(true);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [labels]);
+
+  if (!pageReady) {
+    return <AdminDashboardSkeleton />;
+  }
 
   const statCards = [
     {
@@ -189,11 +199,17 @@ export function DashboardPage() {
   const avatarColors = ["#088f8f", "#2563eb", "#ca8a04", "#16a34a", "#9333ea", "#dc2626"];
 
   return (
-    <div className="page">
-      <h1 className="dash-title">Dashboard</h1>
-      <p className="dash-sub">
-        Welcome back, Admin! Here&apos;s what&apos;s happening with DestinaPH.
-      </p>
+    <div className="page page-stack admin-tool-page">
+      <header className="admin-page-hero admin-page-hero--compact">
+        <div className="admin-page-hero__text">
+          <p className="admin-page-hero__eyebrow">Overview</p>
+          <h1 className="dash-title admin-page-hero__title">Dashboard</h1>
+          <p className="dash-sub admin-page-hero__sub">
+            Welcome back — platform health, signups, and listing momentum at a glance.
+          </p>
+        </div>
+        <div className="admin-page-hero__accent admin-page-hero__accent--dash" aria-hidden />
+      </header>
 
       <div className="stat-grid">
         {statCards.map((s) => (
@@ -220,9 +236,9 @@ export function DashboardPage() {
 
       <div className="dash-grid-2">
         <div className="card" style={{ minHeight: 320 }}>
-          <strong style={{ fontSize: 16, display: "block", marginBottom: 4 }}>Overview</strong>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>Clients & businesses (last 7 days)</span>
-          <div style={{ height: 260, marginTop: 16 }}>
+          <span className="card__title">Overview</span>
+          <span className="card__subtitle">Clients & businesses (last 7 days)</span>
+          <div className="card__chart-wrap">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
@@ -248,9 +264,9 @@ export function DashboardPage() {
         </div>
 
         <div className="card">
-          <strong style={{ fontSize: 16, display: "block", marginBottom: 4 }}>Recent activity</strong>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>Latest listings</span>
-          <div style={{ marginTop: 8 }}>
+          <span className="card__title">Recent activity</span>
+          <span className="card__subtitle">Latest listings</span>
+          <div style={{ marginTop: 12 }}>
             {recent.map((r, i) => (
               <div key={r.id} className="recent-row">
                 <div
@@ -269,7 +285,13 @@ export function DashboardPage() {
               </div>
             ))}
             {recent.length === 0 && (
-              <p style={{ color: "var(--muted)", fontSize: 14 }}>No listings yet.</p>
+              <div className="empty-state empty-state--compact" style={{ marginTop: 8 }}>
+                <div className="empty-state__icon" aria-hidden>
+                  🏝️
+                </div>
+                <p className="empty-state__title">No listings yet</p>
+                <p className="empty-state__text">Approved business listings will appear in this feed as they are created.</p>
+              </div>
             )}
           </div>
         </div>

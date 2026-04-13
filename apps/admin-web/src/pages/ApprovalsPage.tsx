@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { AdminTablePageSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 type Row = {
@@ -11,32 +12,37 @@ type Row = {
 };
 
 export function ApprovalsPage() {
+  const [initialLoad, setInitialLoad] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id,full_name,owner_approval_status,registration_business_name,registration_phone,created_at")
-      .eq("role", "business_owner")
-      .eq("owner_approval_status", "pending")
-      .order("created_at", { ascending: false });
-    if (error) {
-      setMsg(error.message);
-      return;
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id,full_name,owner_approval_status,registration_business_name,registration_phone,created_at")
+        .eq("role", "business_owner")
+        .eq("owner_approval_status", "pending")
+        .order("created_at", { ascending: false });
+      if (error) {
+        setMsg(error.message);
+        return;
+      }
+      setRows((data as Row[]) ?? []);
+    } finally {
+      setInitialLoad(false);
     }
-    setRows((data as Row[]) ?? []);
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const decide = async (id: string, status: "approved" | "rejected") => {
+  const approve = async (id: string) => {
     setMsg(null);
     const { error } = await supabase
       .from("profiles")
-      .update({ owner_approval_status: status })
+      .update({ owner_approval_status: "approved" })
       .eq("id", id)
       .eq("role", "business_owner");
     if (error) {
@@ -46,16 +52,41 @@ export function ApprovalsPage() {
     await load();
   };
 
+  const decline = async (id: string) => {
+    if (
+      !confirm(
+        "Delete this registration permanently? The account and signup data will be removed from the database.",
+      )
+    ) {
+      return;
+    }
+    setMsg(null);
+    const { error } = await supabase.rpc("admin_delete_pending_owner_registration", { p_user_id: id });
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+    await load();
+  };
+
+  if (initialLoad) {
+    return <AdminTablePageSkeleton />;
+  }
+
   return (
-    <div className="page">
-      <header style={{ marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 24, color: "var(--primary)" }}>Business owner approvals</h1>
-        <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>
-          Approve accounts before they can sign in to DestinaPH Business and add listings.
-        </p>
+    <div className="page page-stack admin-tool-page">
+      <header className="admin-page-hero admin-page-hero--compact">
+        <div className="admin-page-hero__text">
+          <p className="admin-page-hero__eyebrow">Trust & safety</p>
+          <h1 className="dash-title admin-page-hero__title">Business owner approvals</h1>
+          <p className="dash-sub admin-page-hero__sub">
+            Approve accounts before they can sign in to DestinaPH Business and add listings.
+          </p>
+        </div>
+        <div className="admin-page-hero__accent admin-page-hero__accent--cat" aria-hidden />
       </header>
-      {msg && <div className="card" style={{ marginBottom: 12 }}>{msg}</div>}
-      <div className="card" style={{ padding: 0 }}>
+      {msg && <div className="alert-banner alert-banner--error">{msg}</div>}
+      <div className="card card--table-shell" style={{ padding: 0 }}>
         <table className="table">
           <thead>
             <tr>
@@ -76,19 +107,19 @@ export function ApprovalsPage() {
                   {new Date(r.created_at).toLocaleDateString()}
                 </td>
                 <td style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="btn btn-primary" onClick={() => void decide(r.id, "approved")}>
+                  <button type="button" className="btn btn-primary" onClick={() => void approve(r.id)}>
                     Approve
                   </button>
-                  <button type="button" className="btn btn-danger" onClick={() => void decide(r.id, "rejected")}>
-                    Reject
+                  <button type="button" className="btn btn-danger" onClick={() => void decline(r.id)}>
+                    Decline
                   </button>
                 </td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ color: "var(--muted)" }}>
-                  No pending owner accounts.
+                <td colSpan={5} className="table-empty">
+                  No pending owner accounts — you&apos;re all caught up.
                 </td>
               </tr>
             )}
