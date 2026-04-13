@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "DestinaPH",
+    "slug": "destinaph",
+    "version": "1.0.0",
+    "platforms": ["ios", "android", "web"],
+    "orientation": "portrait",
+    "icon": "./assets/System_Icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0B3C5D"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "DestinaPH uses your location to show distances to recommended places and routes on the map."
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ph.destinaph.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "DestinaPH uses your location to show distance to destinations and routes on the map.",
+        "LSApplicationQueriesSchemes": ["maps", "comgooglemaps", "googlechromes", "googlenavigation"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/System_Icon.png",
+        "backgroundColor": "#0B3C5D"
+      },
+      "package": "ph.destinaph.app",
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+    }
+  }
+}

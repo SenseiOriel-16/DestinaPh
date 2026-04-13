@@ -1,0 +1,263 @@
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import * as Location from "expo-location";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { RootStackParamList } from "../../App";
+import {
+  fetchOsrmRoute,
+  formatDistanceKm,
+  formatDuration,
+  type LatLng,
+} from "../lib/destinationMapUtils";
+import { openGoogleMapsDirections } from "../lib/mapExternal";
+import { colors } from "../theme/colors";
+
+type Props = NativeStackScreenProps<RootStackParamList, "DestinationMap">;
+
+export function DestinationMapScreen({ route, navigation }: Props) {
+  const { title, destLat, destLng } = route.params;
+  const insets = useSafeAreaInsets();
+  const mapRef = useRef<MapView>(null);
+  const [userLoc, setUserLoc] = useState<LatLng | null>(null);
+  const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
+  const [durationSec, setDurationSec] = useState<number | null>(null);
+  const [distanceM, setDistanceM] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [permDenied, setPermDenied] = useState(false);
+
+  const destination = useMemo(() => ({ latitude: destLat, longitude: destLng }), [destLat, destLng]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setRouteCoords([]);
+    setDurationSec(null);
+    setDistanceM(null);
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") {
+      setPermDenied(true);
+      setUserLoc(null);
+      setLoading(false);
+      return;
+    }
+    setPermDenied(false);
+    try {
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const from = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      setUserLoc(from);
+      const { coords, durationSec: d, distanceM: dist } = await fetchOsrmRoute(from, destination);
+      setRouteCoords(coords);
+      setDurationSec(d);
+      setDistanceM(dist);
+    } catch {
+      setUserLoc(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [destination]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const initialRegion = useMemo(
+    () => ({
+      latitude: destination.latitude,
+      longitude: destination.longitude,
+      latitudeDelta: 0.08,
+      longitudeDelta: 0.08,
+    }),
+    [destination.latitude, destination.longitude],
+  );
+
+  useEffect(() => {
+    if (loading) return;
+    const id = requestAnimationFrame(() => {
+      if (routeCoords.length > 1) {
+        mapRef.current?.fitToCoordinates(routeCoords, {
+          edgePadding: { top: 100, right: 36, bottom: 220, left: 36 },
+          animated: true,
+        });
+        return;
+      }
+      if (userLoc) {
+        mapRef.current?.fitToCoordinates([userLoc, destination], {
+          edgePadding: { top: 100, right: 36, bottom: 220, left: 36 },
+          animated: true,
+        });
+        return;
+      }
+      mapRef.current?.animateToRegion(initialRegion, 350);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [loading, userLoc, destination, routeCoords, initialRegion]);
+
+  const openGoogleDirections = () => {
+    void openGoogleMapsDirections(destLat, destLng);
+  };
+
+  return (
+    <View style={styles.root}>
+      <MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFill}
+        provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
+        initialRegion={initialRegion}
+        showsUserLocation={Boolean(userLoc)}
+        showsMyLocationButton={false}
+      >
+        <Marker coordinate={destination} title={title} pinColor="#c0392b" />
+        {userLoc ? <Marker coordinate={userLoc} title="Your location" pinColor={colors.primaryTeal} /> : null}
+        {routeCoords.length > 1 ? (
+          <Polyline coordinates={routeCoords} strokeColor={colors.primaryTeal} strokeWidth={4} />
+        ) : null}
+      </MapView>
+
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+        <Pressable style={styles.iconCircle} onPress={() => navigation.goBack()} hitSlop={12}>
+          <Text style={styles.iconText}>‹</Text>
+        </Pressable>
+        <Text style={styles.topTitle} numberOfLines={1}>
+          Map
+        </Text>
+        <Pressable style={styles.iconCircle} onPress={() => navigation.goBack()} hitSlop={12}>
+          <Text style={styles.iconText}>✕</Text>
+        </Pressable>
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingBanner}>
+          <ActivityIndicator color={colors.primaryTeal} />
+          <Text style={styles.loadingText}>Loading route…</Text>
+        </View>
+      ) : null}
+
+      {permDenied ? (
+        <View style={[styles.card, styles.floatingCard, { top: insets.top + 56 }]}>
+          <Text style={styles.cardTitle}>Location off</Text>
+          <Text style={styles.cardBody}>
+            Turn on location to see driving directions from you to this place. You can still open Google Maps below.
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={[styles.bottomCard, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryIcon}>🚗</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.summaryMain}>
+              {formatDuration(durationSec)} ({formatDistanceKm(distanceM)})
+            </Text>
+            <Text style={styles.summarySub}>
+              {routeCoords.length > 1
+                ? "via OSRM routing (OpenStreetMap data)."
+                : userLoc
+                  ? "Straight line — route unavailable."
+                  : "Open Google Maps for full navigation."}
+            </Text>
+          </View>
+        </View>
+        <Pressable style={styles.startNav} onPress={openGoogleDirections}>
+          <Text style={styles.startNavText}>Start navigation</Text>
+        </Pressable>
+        <Text style={styles.osmNote}>Map data © OpenStreetMap contributors</Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#000" },
+  topBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    zIndex: 2,
+  },
+  iconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconText: { fontSize: 22, color: colors.navy, fontWeight: "700", marginTop: -2 },
+  topTitle: {
+    flex: 1,
+    textAlign: "center",
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 17,
+    textShadowColor: "rgba(0,0,0,0.45)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  loadingBanner: {
+    position: "absolute",
+    top: "42%",
+    alignSelf: "center",
+    backgroundColor: "rgba(255,255,255,0.95)",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    zIndex: 1,
+  },
+  loadingText: { fontWeight: "600", color: colors.navy },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 14,
+    marginHorizontal: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  floatingCard: { position: "absolute", left: 0, right: 0, zIndex: 1 },
+  cardTitle: { fontWeight: "800", color: colors.navy, marginBottom: 6 },
+  cardBody: { fontSize: 14, color: colors.muted, lineHeight: 20 },
+  bottomCard: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 12,
+  },
+  summaryRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 14 },
+  summaryIcon: { fontSize: 22, marginTop: 2 },
+  summaryMain: { fontSize: 17, fontWeight: "800", color: colors.navy },
+  summarySub: { fontSize: 13, color: colors.muted, marginTop: 4, lineHeight: 18 },
+  startNav: {
+    backgroundColor: colors.primaryTeal,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  startNavText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+  osmNote: {
+    marginTop: 10,
+    fontSize: 11,
+    color: colors.muted2,
+    textAlign: "center",
+  },
+});

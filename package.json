@@ -1,0 +1,21 @@
+{
+  "name": "destinaph",
+  "private": true,
+  "workspaces": [
+    "apps/admin-web",
+    "apps/client-web",
+    "packages/*"
+  ],
+  "scripts": {
+    "sync:icon": "node scripts/sync-system-icon.cjs",
+    "admin": "npm run dev -w @destinaph/admin-web",
+    "client": "npm run dev -w @destinaph/client-web",
+    "mobile": "npm --prefix apps/mobile run start",
+    "mobile:web": "npm --prefix apps/mobile run web",
+    "install:mobile": "npm install --prefix apps/mobile",
+    "build": "npm run build -w @destinaph/admin-web && npm run build -w @destinaph/client-web"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

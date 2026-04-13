@@ -1,0 +1,10 @@
+node_modules
+dist
+.expo
+.turbo
+.env
+.env.*
+!.env.example
+*.log
+web-build
+apps/*/dist
