@@ -5,6 +5,7 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { CompositeScreenProps, useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { FlashNotice } from "../components/FlashNotice";
 import {
   Alert,
   FlatList,
@@ -43,7 +44,6 @@ type BusinessRow = {
   address_line: string | null;
   latitude: number | null;
   longitude: number | null;
-  is_premium: boolean;
   tags: string[] | null;
   accommodations: unknown;
   entrance_fee_pesos: number | null;
@@ -104,7 +104,6 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [images, setImages] = useState<string[]>([]);
-  const [isPremium, setIsPremium] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [favorited, setFavorited] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState(false);
@@ -112,13 +111,18 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const [accommodationsOpen, setAccommodationsOpen] = useState(false);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [entranceLine, setEntranceLine] = useState<string | null>(null);
+  const [estimatedCost, setEstimatedCost] = useState<string | null>(null);
+  const [bestTimes, setBestTimes] = useState<string[]>([]);
   const [accommodations, setAccommodations] = useState<AccommodationItem[]>([]);
   const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [allowRes, setAllowRes] = useState(true);
   const [ratingAvg, setRatingAvg] = useState<number | null>(null);
   const [ratingCount, setRatingCount] = useState(0);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [myStars, setMyStars] = useState<number | null>(null);
   const [ratingBusy, setRatingBusy] = useState(false);
+  const [actionFlash, setActionFlash] = useState<string | null>(null);
+  const clearActionFlash = useCallback(() => setActionFlash(null), []);
 
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -135,10 +139,10 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           name,
           description,
           short_description,
+          allow_reservations,
           address_line,
           latitude,
           longitude,
-          is_premium,
           owner_id,
           rating_average,
           rating_count,
@@ -150,6 +154,9 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           operating_day,
           operating_night,
           pricing_text,
+          estimated_cost_min_pesos,
+          estimated_cost_max_pesos,
+          best_visit_times,
           municipalities(name),
           provinces(name),
           barangays(name),
@@ -170,8 +177,10 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           owner_id?: string;
           rating_average?: number | null;
           rating_count?: number | null;
+          allow_reservations?: boolean | null;
         };
         setOwnerId(typeof row.owner_id === "string" ? row.owner_id : null);
+        setAllowRes(row.allow_reservations !== false);
         const ra = row.rating_average;
         setRatingAvg(ra != null && !Number.isNaN(Number(ra)) ? Number(ra) : null);
         setRatingCount(Math.max(0, Math.floor(Number(row.rating_count ?? 0))));
@@ -190,14 +199,23 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         setTags(Array.isArray(row.tags) ? row.tags : []);
         setLat(row.latitude);
         setLng(row.longitude);
-        setIsPremium(Boolean(row.is_premium));
         setImages(sortedPhotoPublicUrls(row.business_photos).slice(0, 5));
         setEntranceLine(entranceSummary(row));
+        const cmin = (row as any).estimated_cost_min_pesos;
+        const cmax = (row as any).estimated_cost_max_pesos;
+        if (typeof cmin === "number" && typeof cmax === "number" && cmin >= 0 && cmax >= cmin) {
+          setEstimatedCost(`₱${cmin.toLocaleString("en-PH")}–₱${cmax.toLocaleString("en-PH")} / person`);
+        } else {
+          setEstimatedCost(null);
+        }
+        const bt = (row as any).best_visit_times;
+        setBestTimes(Array.isArray(bt) ? bt.filter((x) => typeof x === "string") : []);
         setAccommodations(normalizeAccommodations(row.accommodations));
       } else {
         setImages([]);
-        setIsPremium(false);
         setEntranceLine(null);
+        setEstimatedCost(null);
+        setBestTimes([]);
         setAccommodations([]);
         setOwnerId(null);
         setRatingAvg(null);
@@ -296,6 +314,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         return;
       }
       setMyStars(stars);
+      setActionFlash("Thanks! Your rating was saved.");
       const { data: biz } = await supabase.from("businesses").select("rating_average, rating_count").eq("id", id).maybeSingle();
       if (biz) {
         const b = biz as { rating_average?: number | null; rating_count?: number | null };
@@ -306,6 +325,58 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
     } finally {
       setRatingBusy(false);
     }
+  };
+
+  const removeRating = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) {
+      Alert.alert("Ratings", "Sign in to manage your rating.");
+      return;
+    }
+    if (myStars == null) return;
+    if (ownerId && uid === ownerId) return;
+
+    Alert.alert("Remove rating?", "Your rating will be removed from this destination.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            setRatingBusy(true);
+            try {
+              const { error } = await supabase
+                .from("business_ratings")
+                .delete()
+                .eq("business_id", id)
+                .eq("user_id", uid);
+              if (error) {
+                Alert.alert("Ratings", error.message);
+                return;
+              }
+              setMyStars(null);
+              setActionFlash("Your rating was removed.");
+              const { data: biz } = await supabase
+                .from("businesses")
+                .select("rating_average, rating_count")
+                .eq("id", id)
+                .maybeSingle();
+              if (biz) {
+                const b = biz as { rating_average?: number | null; rating_count?: number | null };
+                const ra = b.rating_average;
+                setRatingAvg(ra != null && !Number.isNaN(Number(ra)) ? Number(ra) : null);
+                setRatingCount(Math.max(0, Math.floor(Number(b.rating_count ?? 0))));
+              }
+            } finally {
+              setRatingBusy(false);
+            }
+          })();
+        },
+      },
+    ]);
   };
 
   const toggleFavorite = async () => {
@@ -329,6 +400,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           return;
         }
         setFavorited(false);
+        setActionFlash("Removed from favorites.");
       } else {
         const { error } = await supabase.from("user_favorites").insert({
           user_id: session.user.id,
@@ -337,12 +409,14 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         if (error) {
           if (error.code === "23505") {
             setFavorited(true);
+            setActionFlash("Saved to favorites.");
             return;
           }
           Alert.alert("Favorites", error.message);
           return;
         }
         setFavorited(true);
+        setActionFlash("Saved to favorites.");
       }
     } finally {
       setFavoriteBusy(false);
@@ -452,6 +526,8 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           ) : null}
         </View>
 
+        <FlashNotice message={actionFlash} variant="success" onDismiss={clearActionFlash} />
+
         <View style={styles.card}>
           <View style={styles.titleRow}>
             <Text style={styles.title}>{title}</Text>
@@ -500,7 +576,18 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
                 ))}
               </View>
               {myStars != null ? (
-                <Text style={styles.rateSaved}>Saved · tap another star to change</Text>
+                <View style={styles.rateFoot}>
+                  <Text style={styles.rateSaved}>Saved · tap another star to change</Text>
+                  <Pressable
+                    onPress={() => void removeRating()}
+                    disabled={ratingBusy}
+                    style={({ pressed }) => [styles.rateRemoveBtn, pressed && { opacity: 0.9 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove rating"
+                  >
+                    <Text style={styles.rateRemoveTxt}>Remove rating</Text>
+                  </Pressable>
+                </View>
               ) : (
                 <Text style={styles.rateSaved}>Tap the stars to submit</Text>
               )}
@@ -530,6 +617,25 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.entranceTitle}>Entrance & fees</Text>
               </View>
               <Text style={styles.entranceText}>{entranceLine}</Text>
+            </View>
+          ) : null}
+
+          {estimatedCost ? (
+            <View style={styles.entranceBox}>
+              <View style={styles.entranceHeader}>
+                <Ionicons name="cash-outline" size={18} color={colors.primaryTeal} />
+                <Text style={styles.entranceTitle}>Estimated cost</Text>
+              </View>
+              <Text style={styles.entranceText}>{estimatedCost}</Text>
+              {bestTimes.length ? (
+                <View style={styles.bestTimesRow}>
+                  {bestTimes.slice(0, 3).map((t) => (
+                    <View key={t} style={styles.bestTimeChip}>
+                      <Text style={styles.bestTimeChipTxt}>{t}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -678,17 +784,17 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
       >
         <Text style={styles.ctaText}>Add to itinerary</Text>
       </Pressable>
-          {isPremium && (
-            <Pressable
-              style={styles.ctaSecondary}
-              onPress={() => {
-                trackListingIntentVisit(id);
-                navigation.navigate("BookingRequest", { businessId: id });
-              }}
-            >
-              <Text style={styles.ctaSecondaryText}>Reserve now · 50% down</Text>
-            </Pressable>
-          )}
+          <Pressable
+            style={[styles.ctaSecondary, !allowRes && { opacity: 0.55 }]}
+            disabled={!allowRes}
+            onPress={() => {
+              if (!allowRes) return;
+              trackListingIntentVisit(id);
+              navigation.navigate("BookingRequest", { businessId: id });
+            }}
+          >
+            <Text style={styles.ctaSecondaryText}>{allowRes ? "Reserve now" : "Reservations disabled"}</Text>
+          </Pressable>
         </View>
     </ScrollView>
     </View>
@@ -714,6 +820,16 @@ const styles = StyleSheet.create({
   entranceHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
   entranceTitle: { fontSize: 14, fontWeight: "700", color: colors.navy },
   entranceText: { fontSize: 13, fontWeight: "500", color: colors.text, lineHeight: 19 },
+  bestTimesRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  bestTimeChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(11,184,196,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(11,184,196,0.22)",
+  },
+  bestTimeChipTxt: { fontSize: 12, fontWeight: "700", color: colors.primaryTeal },
   accomAccordion: {
     marginTop: 20,
     borderRadius: 12,
@@ -849,7 +965,18 @@ const styles = StyleSheet.create({
   ratingSub: { marginTop: 6, fontSize: 12, fontWeight: "600", color: colors.muted },
   rateBlock: { marginTop: 16 },
   starRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
-  rateSaved: { marginTop: 8, fontSize: 12, color: colors.muted2, fontWeight: "500" },
+  rateFoot: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 10 },
+  rateSaved: { fontSize: 12, color: colors.muted2, fontWeight: "500", flex: 1, flexShrink: 1, paddingRight: 6 },
+  rateRemoveBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    flexShrink: 0,
+  },
+  rateRemoveTxt: { fontSize: 12, fontWeight: "700", color: colors.danger },
   rateHint: { marginTop: 14, fontSize: 13, color: colors.muted, fontWeight: "500" },
   rateHintOwn: { marginTop: 14, fontSize: 13, color: colors.primaryTeal, fontWeight: "600" },
   tagRow: { flexDirection: "row", gap: 8, marginTop: 14, paddingRight: 8 },

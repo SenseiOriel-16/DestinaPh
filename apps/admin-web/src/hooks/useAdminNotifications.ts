@@ -4,7 +4,7 @@ import { playNotificationSound } from "../lib/notificationSound";
 
 export type AdminNotifItem = {
   id: string;
-  kind: "approval" | "premium";
+  kind: "approval" | "support";
   title: string;
   subtitle: string;
   href: string;
@@ -30,7 +30,7 @@ export function useAdminNotifications() {
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   const seenApprovalIdsRef = useRef(new Set<string>());
-  const seenPremiumIdsRef = useRef(new Set<string>());
+  const seenSupportMsgIdsRef = useRef(new Set<string>());
   const feedBootstrappedRef = useRef(false);
 
   const pushToast = useCallback((t: Omit<AdminToast, "id">) => {
@@ -46,7 +46,7 @@ export function useAdminNotifications() {
   }, []);
 
   const loadFeed = useCallback(async () => {
-    const [apRes, prRes, apCount, prCount, apIdsRes, prIdsRes] = await Promise.all([
+    const [apRes, apCount, apIdsRes, supRes, supCount, supIdsRes] = await Promise.all([
       supabase
         .from("profiles")
         .select("id,full_name,registration_business_name,created_at")
@@ -55,39 +55,39 @@ export function useAdminNotifications() {
         .order("created_at", { ascending: false })
         .limit(20),
       supabase
-        .from("premium_upgrade_requests")
-        .select("id,created_at,businesses(name)")
-        .eq("status", "pending")
-        .order("created_at", { ascending: false })
-        .limit(20),
-      supabase
         .from("profiles")
         .select("*", { count: "exact", head: true })
         .eq("role", "business_owner")
         .eq("owner_approval_status", "pending"),
-      supabase
-        .from("premium_upgrade_requests")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "pending"),
       supabase.from("profiles").select("id").eq("role", "business_owner").eq("owner_approval_status", "pending"),
-      supabase.from("premium_upgrade_requests").select("id").eq("status", "pending"),
+      supabase
+        .from("support_messages")
+        .select("id,created_at,body")
+        .eq("sender_role", "business_owner")
+        .eq("is_read_by_admin", false)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase
+        .from("support_messages")
+        .select("*", { count: "exact", head: true })
+        .eq("sender_role", "business_owner")
+        .eq("is_read_by_admin", false),
+      supabase
+        .from("support_messages")
+        .select("id")
+        .eq("sender_role", "business_owner")
+        .eq("is_read_by_admin", false),
     ]);
 
     if (apRes.error) console.warn("[notifications] profiles:", apRes.error.message);
-    if (prRes.error) console.warn("[notifications] premium_upgrade_requests:", prRes.error.message);
     if (apIdsRes.error) console.warn("[notifications] profiles ids:", apIdsRes.error.message);
-    if (prIdsRes.error) console.warn("[notifications] premium ids:", prIdsRes.error.message);
 
-    const serverApprovalIds = new Set(
-      ((apIdsRes.data ?? []) as { id: string }[]).map((r) => r.id),
-    );
-    const serverPremiumIds = new Set(((prIdsRes.data ?? []) as { id: string }[]).map((r) => r.id));
+    const serverApprovalIds = new Set(((apIdsRes.data ?? []) as { id: string }[]).map((r) => r.id));
+    const serverSupportIds = new Set(((supIdsRes.data ?? []) as { id: string }[]).map((r) => r.id));
 
-    if (!apIdsRes.error && !prIdsRes.error) {
+    if (!apIdsRes.error) {
       if (!feedBootstrappedRef.current) {
         serverApprovalIds.forEach((id) => seenApprovalIdsRef.current.add(id));
-        serverPremiumIds.forEach((id) => seenPremiumIdsRef.current.add(id));
-        feedBootstrappedRef.current = true;
       } else {
         for (const id of serverApprovalIds) {
           if (!seenApprovalIdsRef.current.has(id)) {
@@ -103,25 +103,31 @@ export function useAdminNotifications() {
         for (const id of [...seenApprovalIdsRef.current]) {
           if (!serverApprovalIds.has(id)) seenApprovalIdsRef.current.delete(id);
         }
+      }
+    }
 
-        for (const id of serverPremiumIds) {
-          if (!seenPremiumIdsRef.current.has(id)) {
-            seenPremiumIdsRef.current.add(id);
+    if (!supIdsRes.error) {
+      if (!feedBootstrappedRef.current) {
+        serverSupportIds.forEach((id) => seenSupportMsgIdsRef.current.add(id));
+      } else {
+        for (const id of serverSupportIds) {
+          if (!seenSupportMsgIdsRef.current.has(id)) {
+            seenSupportMsgIdsRef.current.add(id);
             playNotificationSound();
             pushToast({
-              title: "Premium payment request",
-              body: "A business submitted payment proof for review.",
-              href: "/premium-payments",
+              title: "New support message",
+              body: "A business owner sent a message.",
+              href: "/support",
             });
           }
         }
-        for (const id of [...seenPremiumIdsRef.current]) {
-          if (!serverPremiumIds.has(id)) seenPremiumIdsRef.current.delete(id);
+        for (const id of [...seenSupportMsgIdsRef.current]) {
+          if (!serverSupportIds.has(id)) seenSupportMsgIdsRef.current.delete(id);
         }
       }
-    } else if (!feedBootstrappedRef.current) {
-      feedBootstrappedRef.current = true;
     }
+
+    if (!feedBootstrappedRef.current) feedBootstrappedRef.current = true;
 
     const next: AdminNotifItem[] = [];
     for (const r of (apRes.data as { id: string; full_name: string | null; registration_business_name: string | null; created_at: string }[]) ?? []) {
@@ -134,20 +140,20 @@ export function useAdminNotifications() {
         createdAt: r.created_at,
       });
     }
-    for (const r of (prRes.data as { id: string; created_at: string; businesses: { name: string } | null }[]) ?? []) {
+    for (const m of (supRes.data as { id: string; created_at: string; body: string }[]) ?? []) {
+      const preview = String(m.body ?? "").trim();
       next.push({
-        id: `premium-${r.id}`,
-        kind: "premium",
-        title: "New premium payment request",
-        subtitle: r.businesses?.name?.trim() || "Business submitted proof",
-        href: "/premium-payments",
-        createdAt: r.created_at,
+        id: `support-${m.id}`,
+        kind: "support",
+        title: "New support message",
+        subtitle: preview.length > 80 ? `${preview.slice(0, 80)}…` : preview || "Open inbox to read",
+        href: "/support",
+        createdAt: m.created_at,
       });
     }
     next.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     setItems(next);
-    const badge = (apCount.count ?? 0) + (prCount.count ?? 0);
-    setTotalBadge(badge);
+    setTotalBadge((apCount.count ?? 0) + (supCount.count ?? 0));
   }, [pushToast]);
 
   const bumpFeed = useCallback(() => {
@@ -156,8 +162,13 @@ export function useAdminNotifications() {
 
   useEffect(() => {
     void loadFeed();
-    const interval = window.setInterval(() => void loadFeed(), 16000);
-    return () => window.clearInterval(interval);
+    const onOnline = () => void loadFeed();
+    window.addEventListener("online", onOnline);
+    const interval = window.setInterval(() => void loadFeed(), 4_000);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("online", onOnline);
+    };
   }, [loadFeed]);
 
   useEffect(() => {
@@ -181,6 +192,14 @@ export function useAdminNotifications() {
       )
       .on(
         "postgres_changes",
+        { event: "INSERT", schema: "public", table: "support_messages" },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          if (row.sender_role === "business_owner") bumpFeed();
+        },
+      )
+      .on(
+        "postgres_changes",
         { event: "UPDATE", schema: "public", table: "profiles" },
         (payload) => {
           const old = payload.old as Record<string, unknown> | undefined;
@@ -190,18 +209,10 @@ export function useAdminNotifications() {
           bumpFeed();
         },
       )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "premium_upgrade_requests" },
-        (payload) => {
-          const row = payload.new as { status?: string };
-          if (row.status === "pending") bumpFeed();
-        },
-      )
       .subscribe((status, err) => {
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           console.warn(
-            "[notifications] Realtime channel issue — enable Replication for profiles & premium_upgrade_requests in Supabase. Polling still updates the bell.",
+            "[notifications] Realtime channel issue — enable Replication for profiles in Supabase. Polling still updates the bell.",
             err,
           );
         }

@@ -2,6 +2,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useCallback, useState } from "react";
+import { FlashNotice } from "../components/FlashNotice";
 import {
   ActivityIndicator,
   Alert,
@@ -23,8 +24,10 @@ import { colors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "EditProfile">;
 
-export function EditProfileScreen({ navigation }: Props) {
+export function EditProfileScreen(_props: Props) {
   const insets = useSafeAreaInsets();
+  const [flash, setFlash] = useState<string | null>(null);
+  const clearFlash = useCallback(() => setFlash(null), []);
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [initialUsernameNorm, setInitialUsernameNorm] = useState<string | null>(null);
@@ -95,6 +98,7 @@ export function EditProfileScreen({ navigation }: Props) {
       }
       setAvatarUrl(out.publicUrl);
       setImgBust(Date.now());
+      setFlash("Profile photo updated.");
     } finally {
       setUploading(false);
     }
@@ -150,7 +154,7 @@ export function EditProfileScreen({ navigation }: Props) {
       }
       setInitialUsernameNorm(unameNorm || null);
       setUsername(unameNorm || "");
-      Alert.alert("Edit profile", "Your profile has been saved.", [{ text: "OK", onPress: () => navigation.goBack() }]);
+      setFlash("Profile saved successfully.");
     } finally {
       setSaving(false);
     }
@@ -169,6 +173,7 @@ export function EditProfileScreen({ navigation }: Props) {
       contentContainerStyle={{ paddingBottom: 32 + insets.bottom, paddingTop: 16 }}
       keyboardShouldPersistTaps="handled"
     >
+      <FlashNotice message={flash} variant="success" onDismiss={clearFlash} />
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={colors.primaryTeal} />
       ) : (

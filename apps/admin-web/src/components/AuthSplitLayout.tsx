@@ -29,7 +29,7 @@ export function AuthSplitLayout({ children, formScrollClassName }: Props) {
           <ul className="auth-split__bullets">
             <li>Owner approvals, suspensions, and safety</li>
             <li>Categories, municipalities, and featured content</li>
-            <li>Premium payments and subscription oversight</li>
+            <li>Reports and marketplace health at a glance</li>
           </ul>
         </div>
       </aside>

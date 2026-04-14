@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { AdminMessageBell } from "../components/AdminMessageBell";
 import { AdminNotificationBell } from "../components/AdminNotificationBell";
 import { SoundEnablePrompt } from "../components/SoundEnablePrompt";
 import { supabase } from "../lib/supabaseClient";
@@ -8,16 +9,14 @@ import { primeNotificationAudioFromUserGesture } from "../lib/notificationSound"
 const mainNav = [
   { to: "/", label: "Dashboard", icon: "\u25A4", end: true },
   { to: "/listings", label: "Manage Clients", icon: "\u25CE" },
-  { to: "/premium-payments", label: "Premium payments", icon: "\u{1F4B3}" },
   { to: "/reports", label: "Analytics", icon: "\u{1F4CA}" },
+  { to: "/support", label: "Support", icon: "\u{1F4AC}" },
 ];
 
 const settingsSubNav = [
   { to: "/settings/categories", label: "Categories" },
   { to: "/settings/municipalities", label: "Municipalities" },
   { to: "/settings/featured", label: "Featured" },
-  { to: "/settings/plans", label: "Subscription plans" },
-  { to: "/settings/premium-accounts", label: "Premium payout accounts" },
 ];
 
 export function AdminLayout() {
@@ -156,6 +155,7 @@ export function AdminLayout() {
             </button>
           </div>
           <div className="admin-topbar__right">
+            <AdminMessageBell />
             <AdminNotificationBell />
             <div className="admin-topbar__date">{today}</div>
           </div>

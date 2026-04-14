@@ -4,6 +4,9 @@ const STORAGE_KEY = "destinaph_notification_sound";
 
 /** Same-tab + cross-tab updates for sound preference. */
 export const NOTIFICATION_SOUND_CHANGE_EVENT = "destinaph-notification-sound-change";
+export const NOTIFICATION_SOUND_BLOCKED_EVENT = "destinaph-notification-sound-blocked";
+
+let blocked = false;
 
 /** Explicit "0" = user muted. Missing key = on (first visit). */
 export function getNotificationSoundEnabled(): boolean {
@@ -17,6 +20,10 @@ export function setNotificationSoundEnabled(enabled: boolean): void {
   window.dispatchEvent(new Event(NOTIFICATION_SOUND_CHANGE_EVENT));
 }
 
+export function isNotificationSoundBlocked(): boolean {
+  return blocked;
+}
+
 /**
  * User gesture: unlock browser audio + turn sound on (used by "Tap to enable" UI).
  */
@@ -27,6 +34,8 @@ export async function tryEnableNotificationSound(): Promise<boolean> {
     await a.play();
     a.pause();
     a.currentTime = 0;
+    blocked = false;
+    window.dispatchEvent(new Event(NOTIFICATION_SOUND_BLOCKED_EVENT));
     setNotificationSoundEnabled(true);
     return true;
   } catch {
@@ -58,6 +67,7 @@ export function playNotificationSound(): void {
   const a = new Audio(soundUrl);
   a.volume = 0.85;
   void a.play().catch(() => {
-    /* autoplay policy — next attempt may work after user gesture */
+    blocked = true;
+    window.dispatchEvent(new Event(NOTIFICATION_SOUND_BLOCKED_EVENT));
   });
 }

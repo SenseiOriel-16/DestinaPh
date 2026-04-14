@@ -19,11 +19,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
 import type { TabParamList } from "../navigation/tabTypes";
+import { PasswordField } from "../components/PasswordField";
 import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { isValidUsernameFormat, normalizeUsername, resolveLoginEmail } from "../lib/authUsername";
 import { supabase } from "../lib/supabase";
 import { uploadProfileAvatar } from "../lib/uploadProfileAvatar";
 import { colors } from "../theme/colors";
+import { openTermsPrivacy } from "../lib/termsPrivacy";
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, "Profile">,
@@ -177,6 +179,13 @@ export function ProfileScreen({ navigation }: Props) {
     await refresh();
   };
 
+  const confirmSignOut = () => {
+    Alert.alert("Log out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Log out", style: "destructive", onPress: () => void signOut() },
+    ]);
+  };
+
   const openRoot = (name: ProfileStackLink) => {
     rootNav(navigation)?.navigate(name);
   };
@@ -249,6 +258,12 @@ export function ProfileScreen({ navigation }: Props) {
       icon: "settings-outline",
       onPress: () => openRoot("Settings"),
     },
+    {
+      key: "terms",
+      label: "Terms & Privacy",
+      icon: "document-text-outline",
+      onPress: () => openTermsPrivacy(),
+    },
   ];
 
   const avatarUri =
@@ -314,7 +329,7 @@ export function ProfileScreen({ navigation }: Props) {
               <Ionicons name="chevron-forward" size={18} color={colors.border} />
             </Pressable>
           ))}
-          <Pressable onPress={() => void signOut()} style={[styles.menuRow, styles.menuBorder]}>
+          <Pressable onPress={confirmSignOut} style={[styles.menuRow, styles.menuBorder]}>
             <Ionicons name="log-out-outline" size={22} color={colors.danger} />
             <Text style={[styles.menuLabel, { color: colors.danger }]}>Log Out</Text>
           </Pressable>
@@ -380,22 +395,22 @@ export function ProfileScreen({ navigation }: Props) {
                   placeholderTextColor={colors.muted2}
                 />
                 <Text style={[styles.label, { marginTop: 10 }]}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  secureTextEntry
+                <PasswordField
+                  inputStyle={styles.passwordInputInner}
+                  autoCapitalize="none"
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="••••••••"
-                  placeholderTextColor={colors.muted2}
+                  placeholder="Password (min. 6 characters)"
+                  textContentType="newPassword"
                 />
                 <Text style={[styles.label, { marginTop: 10 }]}>Confirm password</Text>
-                <TextInput
-                  style={styles.input}
-                  secureTextEntry
+                <PasswordField
+                  inputStyle={styles.passwordInputInner}
+                  autoCapitalize="none"
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
-                  placeholder="••••••••"
-                  placeholderTextColor={colors.muted2}
+                  placeholder="Re-enter password"
+                  textContentType="newPassword"
                 />
               </>
             ) : (
@@ -411,13 +426,13 @@ export function ProfileScreen({ navigation }: Props) {
                   placeholderTextColor={colors.muted2}
                 />
                 <Text style={[styles.label, { marginTop: 10 }]}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  secureTextEntry
+                <PasswordField
+                  inputStyle={styles.passwordInputInner}
+                  autoCapitalize="none"
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="••••••••"
-                  placeholderTextColor={colors.muted2}
+                  placeholder="Enter password"
+                  textContentType="password"
                 />
               </>
             )}
@@ -584,6 +599,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     backgroundColor: colors.white,
     color: colors.text,
+  },
+  passwordInputInner: {
+    paddingVertical: 10,
   },
   msg: {
     marginTop: 10,

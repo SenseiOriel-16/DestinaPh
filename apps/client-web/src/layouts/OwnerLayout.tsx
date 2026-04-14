@@ -1,8 +1,10 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { OwnerMessageBell } from "../components/OwnerMessageBell";
 import { OwnerNotificationBell } from "../components/OwnerNotificationBell";
 import { SoundEnablePrompt } from "../components/SoundEnablePrompt";
 import { supabase } from "../lib/supabaseClient";
+import { primeNotificationAudioFromUserGesture } from "../lib/notificationSound";
 
 const OWNER_THEME_KEY = "destinaph_owner_dark";
 
@@ -10,9 +12,7 @@ const mainNav = [
   { to: "/", label: "Dashboard", icon: "\u25A4", end: true },
   { to: "/listings", label: "Manage Listings", icon: "\u25CE" },
   { to: "/reservations", label: "Reservations", icon: "\u{1F4C5}" },
-  { to: "/payment-accounts", label: "Payment accounts", icon: "\u{1F4B3}" },
   { to: "/analytics", label: "Analytics", icon: "\u{1F4CA}" },
-  { to: "/upgrade", label: "Premium", icon: "\u2605" },
 ];
 
 function titleForPath(pathname: string): { title: string } {
@@ -25,23 +25,23 @@ function titleForPath(pathname: string): { title: string } {
   if (pathname === "/reservations") {
     return { title: "Reservations" };
   }
-  if (pathname === "/payment-accounts") {
-    return { title: "Payment accounts" };
-  }
   if (pathname === "/listings/new") {
     return { title: "Add New Listing" };
   }
   if (/^\/listings\/[^/]+$/.test(pathname) && pathname !== "/listings/new") {
     return { title: "Edit Listing" };
   }
-  if (pathname === "/upgrade") {
-    return { title: "Premium" };
-  }
-  if (pathname === "/settings") {
+  if (pathname === "/settings" || pathname === "/settings/") {
     return { title: "Account settings" };
+  }
+  if (pathname === "/settings/e-wallet") {
+    return { title: "E-Wallet Settings" };
   }
   if (pathname === "/analytics") {
     return { title: "Analytics" };
+  }
+  if (pathname === "/support") {
+    return { title: "Support" };
   }
   return { title: "DestinaPH Business" };
 }
@@ -51,7 +51,6 @@ export function OwnerLayout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [businessName, setBusinessName] = useState("Your business");
-  const [anyPremium, setAnyPremium] = useState(false);
   const [avatarLetter, setAvatarLetter] = useState("B");
   const [welcomeName, setWelcomeName] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(() => location.pathname.startsWith("/settings"));
@@ -61,6 +60,14 @@ export function OwnerLayout() {
   });
 
   const onSettingsPath = location.pathname.startsWith("/settings");
+
+  useEffect(() => {
+    const onFirstGesture = () => {
+      void primeNotificationAudioFromUserGesture();
+    };
+    document.addEventListener("pointerdown", onFirstGesture, { once: true, capture: true });
+    return () => document.removeEventListener("pointerdown", onFirstGesture, { capture: true } as AddEventListenerOptions);
+  }, []);
 
   useEffect(() => {
     if (onSettingsPath) setSettingsOpen(true);
@@ -75,34 +82,46 @@ export function OwnerLayout() {
     }
   }, [darkMode]);
 
-  useEffect(() => {
-    void (async () => {
-      const { data } = await supabase.auth.getUser();
-      const u = data.user;
-      if (!u) return;
-      const meta = u.user_metadata as { full_name?: string; business_name?: string } | undefined;
-      const nameFromMeta = meta?.full_name?.trim() || u.email?.split("@")[0] || "Partner";
-      setAvatarLetter(nameFromMeta.slice(0, 1).toUpperCase());
+  const loadOwnerSidebar = useCallback(async () => {
+    const { data } = await supabase.auth.getUser();
+    const u = data.user;
+    if (!u) return;
+    const meta = u.user_metadata as { full_name?: string; business_name?: string } | undefined;
+    const nameFromMeta = meta?.full_name?.trim() || u.email?.split("@")[0] || "Partner";
 
-      const uid = u.id;
-      const { data: prof } = await supabase.from("profiles").select("full_name").eq("id", uid).maybeSingle();
-      setWelcomeName(prof?.full_name?.trim() || nameFromMeta);
-      const { data: rows } = await supabase
-        .from("businesses")
-        .select("name,is_premium")
-        .eq("owner_id", uid)
-        .order("created_at", { ascending: true });
-      const list = rows ?? [];
-      const display =
-        meta?.business_name?.trim() ||
-        (list[0] as { name?: string } | undefined)?.name ||
-        "Your business";
-      setBusinessName(display);
-      setAnyPremium(list.some((r: { is_premium?: boolean }) => r.is_premium));
-    })();
+    const uid = u.id;
+    const { data: prof } = await supabase.from("profiles").select("full_name").eq("id", uid).maybeSingle();
+    const displayName = prof?.full_name?.trim() || nameFromMeta;
+    setWelcomeName(displayName);
+    setAvatarLetter(displayName.slice(0, 1).toUpperCase());
+
+    const { data: rows } = await supabase
+      .from("businesses")
+      .select("name")
+      .eq("owner_id", uid)
+      .order("created_at", { ascending: true });
+    const list = rows ?? [];
+    const display =
+      meta?.business_name?.trim() ||
+      (list[0] as { name?: string } | undefined)?.name ||
+      "Your business";
+    setBusinessName(display);
   }, []);
 
+  useEffect(() => {
+    void loadOwnerSidebar();
+  }, [loadOwnerSidebar]);
+
+  useEffect(() => {
+    const onUpdated = () => {
+      void loadOwnerSidebar();
+    };
+    window.addEventListener("destinaph-owner-profile-updated", onUpdated);
+    return () => window.removeEventListener("destinaph-owner-profile-updated", onUpdated);
+  }, [loadOwnerSidebar]);
+
   const signOut = async () => {
+    if (!window.confirm("Are you sure you want to log out?")) return;
     await supabase.auth.signOut();
     navigate("/login");
   };
@@ -169,10 +188,18 @@ export function OwnerLayout() {
               <div className="owner-nav__sub">
                 <NavLink
                   to="/settings"
+                  end
                   className={({ isActive }) => (isActive ? "active" : "")}
                   onClick={() => setSidebarOpen(false)}
                 >
                   Account settings
+                </NavLink>
+                <NavLink
+                  to="/settings/e-wallet"
+                  className={({ isActive }) => (isActive ? "active" : "")}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  E-Wallet settings
                 </NavLink>
                 <div className="owner-nav__sub-row">
                   <span className="owner-nav__sub-label">Dark mode</span>
@@ -186,12 +213,13 @@ export function OwnerLayout() {
                     <span className="owner-nav__switch-knob" />
                   </button>
                 </div>
-                <a
-                  href="mailto:support@destinaph.example?subject=DestinaPH%20Business%20support"
+                <NavLink
+                  to="/support"
+                  className={({ isActive }) => (isActive ? "active" : "")}
                   onClick={() => setSidebarOpen(false)}
                 >
                   Contact support
-                </a>
+                </NavLink>
               </div>
             )}
           </div>
@@ -201,7 +229,6 @@ export function OwnerLayout() {
           <div className="owner-sidebar__card-meta">
             <strong title={businessName}>{businessName}</strong>
             <small>Business Owner</small>
-            {anyPremium && <span className="owner-premium-pill">Premium</span>}
           </div>
         </div>
         <button type="button" className="owner-sidebar__logout" onClick={() => void signOut()}>
@@ -227,6 +254,7 @@ export function OwnerLayout() {
             </div>
           </div>
           <div className="owner-topbar__right">
+            <OwnerMessageBell />
             <OwnerNotificationBell />
             <div className="owner-topbar__avatar" aria-hidden>
               {avatarLetter}

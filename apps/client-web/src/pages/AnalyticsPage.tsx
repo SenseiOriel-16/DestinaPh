@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { ClientAnalyticsSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
-type BizRow = { id: string; name: string; is_premium: boolean };
+type BizRow = { id: string; name: string };
 
 type DatePreset = "today" | "this_month" | "specific_month" | "year";
 
@@ -101,7 +100,6 @@ function buildCsv(rows: { name: string; views: number; intent: number; confirmed
 
 export function AnalyticsPage() {
   const [pageReady, setPageReady] = useState(false);
-  const [hasPremium, setHasPremium] = useState(false);
   const [businesses, setBusinesses] = useState<BizRow[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -127,7 +125,7 @@ export function AnalyticsPage() {
     if (!uid) return [];
     const { data, error } = await supabase
       .from("businesses")
-      .select("id,name,is_premium")
+      .select("id,name")
       .eq("owner_id", uid)
       .order("name", { ascending: true });
     if (error) {
@@ -136,7 +134,6 @@ export function AnalyticsPage() {
     }
     const list = (data as BizRow[]) ?? [];
     setBusinesses(list);
-    setHasPremium(list.some((b) => b.is_premium));
     return list;
   }, []);
 
@@ -191,10 +188,10 @@ export function AnalyticsPage() {
   }, [loadBusinesses]);
 
   useEffect(() => {
-    if (!pageReady || !hasPremium) return;
+    if (!pageReady) return;
     const ids = businesses.map((b) => b.id);
     void loadEvents(ids);
-  }, [pageReady, hasPremium, businesses, loadEvents]);
+  }, [pageReady, businesses, loadEvents]);
 
   const tableRows = useMemo(() => {
     return businesses.map((b) => {
@@ -202,7 +199,6 @@ export function AnalyticsPage() {
       return {
         id: b.id,
         name: b.name,
-        isPremium: b.is_premium,
         views: c.view,
         intent: c.intent_visit,
         confirmed: c.confirm_visit,
@@ -238,40 +234,6 @@ export function AnalyticsPage() {
 
   if (!pageReady) {
     return <ClientAnalyticsSkeleton />;
-  }
-
-  if (!hasPremium) {
-    return (
-      <div className="page page--flush-top page-stack owner-analytics">
-        <div className="owner-analytics__hero">
-          <p className="owner-analytics__eyebrow">Premium</p>
-          <h1 className="owner-analytics__title">Analytics</h1>
-          <p className="owner-analytics__lead">
-            Per-listing performance — views, visit intent from travelers tapping your listing, and confirmed visits when
-            you confirm a reservation — is available on{" "}
-            <strong>Premium</strong>. Upgrade at least one listing to unlock the analytics dashboard and exports.
-          </p>
-        </div>
-        <div className="owner-analytics-paywall">
-          <div className="owner-analytics-paywall__icon" aria-hidden>
-            {"\u{1F4CA}"}
-          </div>
-          <h2 className="owner-analytics-paywall__title">Unlock analytics with Premium</h2>
-          <p className="owner-analytics-paywall__text">
-            See which listings get attention, how often travelers show serious interest, and booking confirmations over
-            time. Filter by day, month, or year and download clean spreadsheets for your records.
-          </p>
-          <div className="owner-analytics-paywall__actions">
-            <Link className="btn btn-primary owner-analytics-paywall__btn" to="/upgrade">
-              Go to Premium
-            </Link>
-            <Link className="btn btn-outline owner-analytics-paywall__btn" to="/">
-              Back to dashboard
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   const quiet = totals.views === 0 && totals.intent === 0 && totals.confirmed === 0;
@@ -385,11 +347,6 @@ export function AnalyticsPage() {
               <tr key={r.id}>
                 <td>
                   <span className="owner-analytics__listing-name">{r.name}</span>
-                  {r.isPremium ? (
-                    <span className="owner-analytics__premium-tag" title="Premium listing">
-                      Premium
-                    </span>
-                  ) : null}
                 </td>
                 <td>{r.views.toLocaleString()}</td>
                 <td>{r.intent.toLocaleString()}</td>

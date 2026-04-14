@@ -4,14 +4,7 @@ import { useAdminNotifications } from "../hooks/useAdminNotifications";
 import { useNotificationSoundPref } from "../hooks/useNotificationSoundPref";
 import { setNotificationSoundEnabled } from "../lib/notificationSound";
 
-function DropdownIcon({ kind }: { kind: "approval" | "premium" }) {
-  if (kind === "premium") {
-    return (
-      <span className="notif-dropdown__icon notif-dropdown__icon--premium" aria-hidden>
-        {"\u{1F4B3}"}
-      </span>
-    );
-  }
+function DropdownIcon() {
   return (
     <span className="notif-dropdown__icon notif-dropdown__icon--approval" aria-hidden>
       {"\u{1F465}"}
@@ -19,14 +12,10 @@ function DropdownIcon({ kind }: { kind: "approval" | "premium" }) {
   );
 }
 
-function ToastIcon({ href }: { href: string }) {
-  const premium = href.includes("premium");
+function ToastIcon() {
   return (
-    <span
-      className={`notif-toast__icon ${premium ? "notif-toast__icon--premium" : "notif-toast__icon--approval"}`}
-      aria-hidden
-    >
-      {premium ? "\u{1F4B3}" : "\u{1F465}"}
+    <span className="notif-toast__icon notif-toast__icon--approval" aria-hidden>
+      {"\u{1F465}"}
     </span>
   );
 }
@@ -41,7 +30,7 @@ export function AdminNotificationBell() {
       <div className="notif-toast-stack" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className="notif-toast">
-            <ToastIcon href={t.href} />
+            <ToastIcon />
             <button
               type="button"
               className="notif-toast__main"
@@ -50,13 +39,7 @@ export function AdminNotificationBell() {
                 navigate(t.href);
               }}
             >
-              <span
-                className={
-                  t.href.includes("premium") ? "notif-toast__eyebrow notif-toast__eyebrow--premium" : "notif-toast__eyebrow"
-                }
-              >
-                {t.href.includes("premium") ? "Premium" : "Registration"}
-              </span>
+              <span className="notif-toast__eyebrow">Registration</span>
               <strong>{t.title}</strong>
               <span className="notif-toast__body">{t.body}</span>
             </button>
@@ -102,7 +85,7 @@ export function AdminNotificationBell() {
                 <span className="notif-dropdown__empty-icon" aria-hidden>
                   {"\u{1F4C5}"}
                 </span>
-                <p className="notif-dropdown__empty">You&apos;re all caught up. No pending owner registrations or premium requests.</p>
+                <p className="notif-dropdown__empty">You&apos;re all caught up. No pending owner registrations.</p>
               </div>
             ) : (
               <ul className="notif-dropdown__list">
@@ -117,15 +100,9 @@ export function AdminNotificationBell() {
                         setOpen(false);
                       }}
                     >
-                      <DropdownIcon kind={it.kind} />
+                      <DropdownIcon />
                       <div className="notif-dropdown__item-main">
-                        <span
-                          className={
-                            it.kind === "premium" ? "notif-dropdown__kind notif-dropdown__kind--premium" : "notif-dropdown__kind"
-                          }
-                        >
-                          {it.kind === "premium" ? "Premium payment" : "Owner signup"}
-                        </span>
+                        <span className="notif-dropdown__kind">Owner signup</span>
                         <strong className="notif-dropdown__title">{it.title}</strong>
                         <span className="notif-dropdown__sub">{it.subtitle}</span>
                         <time className="notif-dropdown__time" dateTime={it.createdAt}>

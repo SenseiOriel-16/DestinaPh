@@ -1,11 +1,14 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Image,
+  type ImageSourcePropType,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -28,6 +31,14 @@ type AnyBookingRequestProps =
 type PayMethod = "gcash" | "maya" | "paypal";
 type TripPeriod = "day" | "night";
 
+const FOOD_SLUG = "food-dining";
+
+const PAY_METHOD_ASSETS: Record<PayMethod, { name: string; logo: ImageSourcePropType }> = {
+  gcash: { name: "GCash", logo: require("../../assets/gcashlogo.png") },
+  maya: { name: "Maya", logo: require("../../assets/mayalogo.png") },
+  paypal: { name: "PayPal", logo: require("../../assets/paypallogo.jpg") },
+};
+
 function randomBookingId(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -46,6 +57,108 @@ function nightsBetween(checkIn: string, checkOut: string): number {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_24H_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const HOURS_12 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+type StayDetailPicker = "hour" | "meridiem";
+
+function WebDateInput({
+  value,
+  onChange,
+  "aria-label": ariaLabel,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  "aria-label": string;
+}) {
+  // NOTE: React Native Web `TextInput` doesn't reliably support `type="date"`.
+  // Render a real HTML input on web to guarantee calendar picker.
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const openPicker = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    // Chromium supports showPicker(); fallback to focus+click.
+    const anyEl = el as any;
+    if (typeof anyEl.showPicker === "function") anyEl.showPicker();
+    else {
+      el.focus();
+      el.click();
+    }
+  };
+
+  return (
+    <div style={{ width: "100%", marginTop: 6 }}>
+      {/* Hide native calendar affordance where possible (Chrome/Safari). */}
+      <style>{`
+        input[data-dph-date="1"]::-webkit-calendar-picker-indicator { opacity: 0; display: none; }
+        input[data-dph-date="1"]::-webkit-inner-spin-button { display: none; }
+      `}</style>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={ariaLabel}
+        onClick={openPicker}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openPicker();
+          }
+        }}
+        style={{
+          width: "100%",
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderStyle: "solid",
+          borderColor: "rgba(255,255,255,0.64)",
+          backgroundColor: "rgba(255,255,255,0.22)",
+          padding: 12,
+          boxSizing: "border-box",
+          cursor: "pointer",
+        }}
+      >
+        <Ionicons name="calendar-outline" size={18} color={colors.muted2} />
+        <input
+          ref={inputRef}
+          aria-label={ariaLabel}
+          data-dph-date="1"
+          type="date"
+          value={DATE_RE.test(value.trim()) ? value.trim() : ""}
+          onChange={(e) => onChange((e.target as HTMLInputElement).value)}
+          onClick={(e) => {
+            // Prevent wrapper click from firing twice.
+            e.stopPropagation();
+          }}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            border: "none",
+            background: "transparent",
+            color: colors.text,
+            fontSize: 15,
+            outline: "none",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function parseLocalDateFromYmd(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map((x) => Number(x));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return new Date();
+  return new Date(y, m - 1, d, 12, 0, 0, 0);
+}
+
+function formatYmdFromDate(d: Date): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${day}`;
+}
 
 function normalizeArrivalTime(input: string): string | null {
   const raw = input.trim().toLowerCase();
@@ -92,6 +205,7 @@ function normalizeArrivalTime(input: string): string | null {
 export function BookingRequestScreen({ route, navigation }: AnyBookingRequestProps) {
   const { businessId } = route.params;
   const [placeName, setPlaceName] = useState("");
+  const [categorySlug, setCategorySlug] = useState<string>("");
   const [accommodations, setAccommodations] = useState<AccommodationItem[]>([]);
   const [operatingDay, setOperatingDay] = useState(false);
   const [operatingNight, setOperatingNight] = useState(false);
@@ -110,13 +224,19 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
   const [gcashLabel, setGcashLabel] = useState("");
   const [mayaLabel, setMayaLabel] = useState("");
   const [paypalEmail, setPaypalEmail] = useState("");
+  const [paypalAccountName, setPaypalAccountName] = useState("");
   const [selectedAccIndex, setSelectedAccIndex] = useState<number | null>(null);
   const [accPickerOpen, setAccPickerOpen] = useState(false);
   const [fullName, setFullName] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
-  const [arrivalTime, setArrivalTime] = useState("");
+  const [arrivalHour12, setArrivalHour12] = useState<number>(1);
+  const [arrivalMeridiem, setArrivalMeridiem] = useState<"AM" | "PM">("AM");
+  const [androidDateJob, setAndroidDateJob] = useState<null | { which: "checkin" | "checkout"; value: Date }>(null);
+  const [iosDateModal, setIosDateModal] = useState<null | "checkin" | "checkout">(null);
+  const [iosPickDate, setIosPickDate] = useState(new Date());
+  const [stayDetailPicker, setStayDetailPicker] = useState<null | StayDetailPicker>(null);
   const [tripPeriod, setTripPeriod] = useState<TripPeriod | null>(null);
   const [guestCount, setGuestCount] = useState("2");
   const [notes, setNotes] = useState("");
@@ -135,7 +255,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
       const { data, error } = await supabase
         .from("businesses")
         .select(
-          "name,is_premium,accommodations,entrance_fee_pesos,entrance_fee_day_pesos,entrance_fee_night_pesos,operating_day,operating_night,pay_gcash_enabled,pay_maya_enabled,pay_paypal_enabled,pay_gcash_qr_path,pay_maya_qr_path,pay_gcash_account_label,pay_maya_account_label,pay_paypal_email,pay_gcash_account_name,pay_gcash_account_number,pay_maya_account_name,pay_maya_account_number",
+          "name,allow_reservations,accommodations,entrance_fee_pesos,entrance_fee_day_pesos,entrance_fee_night_pesos,operating_day,operating_night,categories(slug),pay_gcash_enabled,pay_maya_enabled,pay_paypal_enabled,pay_gcash_qr_path,pay_maya_qr_path,pay_gcash_account_label,pay_maya_account_label,pay_paypal_email,pay_paypal_account_name,pay_gcash_account_name,pay_gcash_account_number,pay_maya_account_name,pay_maya_account_number",
         )
         .eq("id", businessId)
         .maybeSingle();
@@ -145,14 +265,13 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         return;
       }
       const row = data as Record<string, unknown>;
-      if (!row.is_premium) {
-        Alert.alert("Not available", "Reservations open only for premium listings.", [
-          { text: "OK", onPress: () => navigation.goBack() },
-        ]);
-        setLoadingBiz(false);
+      if ((row as any).allow_reservations === false) {
+        Alert.alert("Reservations disabled", "This destination is not accepting reservations right now.");
+        navigation.goBack();
         return;
       }
       setPlaceName(String(row.name ?? ""));
+      setCategorySlug(String((row as any).categories?.slug ?? "").trim());
       setAccommodations(normalizeAccommodations(row.accommodations));
       const opDay = Boolean((row as any).operating_day);
       const opNight = Boolean((row as any).operating_night);
@@ -184,9 +303,20 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
       setGcashLabel(gcName || gcNo ? `${gcName}${gcName && gcNo ? " · " : ""}${gcNo}` : String(row.pay_gcash_account_label ?? ""));
       setMayaLabel(myName || myNo ? `${myName}${myName && myNo ? " · " : ""}${myNo}` : String(row.pay_maya_account_label ?? ""));
       setPaypalEmail(String(row.pay_paypal_email ?? ""));
+      setPaypalAccountName(String((row as any).pay_paypal_account_name ?? "").trim());
       setLoadingBiz(false);
     })();
   }, [businessId]);
+
+  const isFood = categorySlug === FOOD_SLUG;
+
+  // Food listings should use a single visit date. Keep checkout synced for DB compatibility.
+  useEffect(() => {
+    if (!isFood) return;
+    const d = checkIn.trim();
+    if (DATE_RE.test(d) && checkOut.trim() !== d) setCheckOut(d);
+    if (!DATE_RE.test(d) && checkOut.trim()) setCheckOut("");
+  }, [isFood, checkIn, checkOut]);
 
   const availableAccs = useMemo(
     () => accommodations.map((a, i) => ({ a, i })).filter(({ a }) => a.available !== false && a.name.trim()),
@@ -198,7 +328,29 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
     return a?.name?.trim?.() ? a.name.trim() : "";
   }, [selectedAccIndex, accommodations]);
 
-  const nights = useMemo(() => nightsBetween(checkIn.trim(), checkOut.trim()), [checkIn, checkOut]);
+  const nights = useMemo(
+    () => (isFood ? 0 : nightsBetween(checkIn.trim(), checkOut.trim())),
+    [checkIn, checkOut, isFood],
+  );
+
+  const arrivalTimeStr = useMemo(
+    () => `${arrivalHour12}${arrivalMeridiem === "AM" ? "am" : "pm"}`,
+    [arrivalHour12, arrivalMeridiem],
+  );
+
+  const openDatePicker = useCallback((which: "checkin" | "checkout") => {
+    const raw = which === "checkin" ? checkIn : checkOut;
+    const base = DATE_RE.test(raw.trim()) ? parseLocalDateFromYmd(raw.trim()) : new Date();
+    if (Platform.OS === "android") {
+      setAndroidDateJob({ which, value: base });
+      return;
+    }
+    if (Platform.OS === "web") {
+      return;
+    }
+    setIosPickDate(base);
+    setIosDateModal(which);
+  }, [checkIn, checkOut]);
   const pricePerNight =
     selectedAccIndex != null &&
     accommodations[selectedAccIndex]?.price_pesos &&
@@ -225,11 +377,29 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
 
   const enabledMethods = useMemo(() => {
     const m: PayMethod[] = [];
-    if (payGcash && gcashPath) m.push("gcash");
-    if (payMaya && mayaPath) m.push("maya");
+    const gcashReady =
+      payGcash &&
+      (Boolean(gcashPath) || (Boolean(gcashAccountName.trim()) && Boolean(gcashAccountNumber.trim())));
+    const mayaReady =
+      payMaya && (Boolean(mayaPath) || (Boolean(mayaAccountName.trim()) && Boolean(mayaAccountNumber.trim())));
+    if (gcashReady) m.push("gcash");
+    if (mayaReady) m.push("maya");
     if (payPaypal && paypalEmail.trim()) m.push("paypal");
     return m;
-  }, [payGcash, payMaya, payPaypal, gcashPath, mayaPath, paypalEmail]);
+  }, [
+    payGcash,
+    payMaya,
+    payPaypal,
+    gcashPath,
+    mayaPath,
+    paypalEmail,
+    gcashAccountName,
+    gcashAccountNumber,
+    mayaAccountName,
+    mayaAccountNumber,
+  ]);
+
+  const paymentOptional = enabledMethods.length === 0;
 
   const pickProof = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -258,17 +428,17 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
       setSubmitMsg("Please enter your contact number.");
       return;
     }
-    if (!DATE_RE.test(checkIn.trim()) || !DATE_RE.test(checkOut.trim())) {
-      setSubmitMsg("Enter check-in and check-out as YYYY-MM-DD (e.g. 2026-05-01).");
+    if (!DATE_RE.test(checkIn.trim()) || (!isFood && !DATE_RE.test(checkOut.trim()))) {
+      setSubmitMsg(isFood ? "Enter visit date as YYYY-MM-DD (e.g. 2026-05-01)." : "Enter check-in and check-out as YYYY-MM-DD (e.g. 2026-05-01).");
       return;
     }
-    if (nights < 1) {
+    if (!isFood && nights < 1) {
       setSubmitMsg("Check-out must be after check-in.");
       return;
     }
-    const normalizedArrival = normalizeArrivalTime(arrivalTime);
+    const normalizedArrival = normalizeArrivalTime(arrivalTimeStr);
     if (!normalizedArrival) {
-      setSubmitMsg("Enter arrival time with AM/PM (e.g. 12pm, 12am, 5pm, or 5:30 pm).");
+      setSubmitMsg("Choose arrival time: hour (1–12) and AM or PM.");
       return;
     }
     if (operatingDay && operatingNight && !tripPeriod) {
@@ -279,17 +449,19 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
       setSubmitMsg("Please select an accommodation type.");
       return;
     }
-    if (!paymentMethod || !enabledMethods.includes(paymentMethod)) {
-      setSubmitMsg("Choose a payment method the property accepts.");
-      return;
-    }
-    if (!reference.trim()) {
-      setSubmitMsg("Enter your payment reference / transaction ID.");
-      return;
-    }
-    if (!proof) {
-      setSubmitMsg("Attach a screenshot of your payment.");
-      return;
+    if (!paymentOptional) {
+      if (!paymentMethod || !enabledMethods.includes(paymentMethod)) {
+        setSubmitMsg("Choose a payment method the property accepts.");
+        return;
+      }
+      if (!reference.trim()) {
+        setSubmitMsg("Enter your payment reference / transaction ID.");
+        return;
+      }
+      if (!proof) {
+        setSubmitMsg("Attach a screenshot of your payment.");
+        return;
+      }
     }
 
     setSending(true);
@@ -305,16 +477,15 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         setSubmitMsg("Reservations are for traveler (consumer) accounts.");
         return;
       }
-      if (enabledMethods.length === 0) {
-        setSubmitMsg("This property has not finished payment setup. Contact the owner or try again later.");
-        return;
-      }
-
       const bookingId = randomBookingId();
-      const up = await uploadBookingPaymentProof(supabase, uid, bookingId, proof);
-      if ("error" in up) {
-        setSubmitMsg(up.error);
-        return;
+      let proofStoragePath: string | null = null;
+      if (!paymentOptional) {
+        const up = await uploadBookingPaymentProof(supabase, uid, bookingId, proof!);
+        if ("error" in up) {
+          setSubmitMsg(up.error);
+          return;
+        }
+        proofStoragePath = up.storagePath;
       }
 
       const accName =
@@ -337,14 +508,14 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         accommodation_cost_pesos: accommodationCost > 0 ? accommodationCost : null,
         accommodation_name: accName,
         check_in: checkIn.trim(),
-        check_out: checkOut.trim(),
+        check_out: isFood ? checkIn.trim() : checkOut.trim(),
         guest_count: guests,
         estimated_total_pesos: totalAmount > 0 ? totalAmount : null,
         downpayment_percent: 50,
         downpayment_pesos: downpaymentPesos > 0 ? downpaymentPesos : null,
-        payment_method: paymentMethod,
-        payment_reference: reference.trim(),
-        payment_proof_storage_path: up.storagePath,
+        payment_method: paymentOptional ? null : paymentMethod,
+        payment_reference: paymentOptional ? null : reference.trim(),
+        payment_proof_storage_path: proofStoragePath,
       });
 
       if (error) {
@@ -395,11 +566,11 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
   return (
     <View style={styles.shell}>
       <Modal visible={doneModalOpen} transparent animationType="fade" onRequestClose={() => setDoneModalOpen(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setDoneModalOpen(false)} />
+        <Pressable style={styles.doneModalOverlay} onPress={() => setDoneModalOpen(false)} />
         <View style={styles.doneWrap} pointerEvents="box-none">
-          <GlassPanel style={styles.doneCard} contentStyle={styles.doneInner} borderRadius={24} intensity={70}>
-            <View style={styles.doneIcon}>
-              <Ionicons name="checkmark-circle" size={44} color={colors.primaryTeal} />
+          <View style={styles.doneCardSolid}>
+            <View style={styles.doneIconSolid}>
+              <Ionicons name="checkmark" size={34} color="#fff" />
             </View>
             <Text style={styles.doneTitle}>Reservation submitted</Text>
             <Text style={styles.doneText}>
@@ -407,7 +578,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
             </Text>
             <View style={styles.doneBtns}>
               <Pressable
-                style={({ pressed }) => [styles.doneBtnPrimary, pressed && { opacity: 0.92 }]}
+                style={({ pressed }) => [styles.doneBtnPrimary, pressed && styles.doneBtnPressed]}
                 onPress={() => {
                   setDoneModalOpen(false);
                   goToBookings();
@@ -416,26 +587,29 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
                 <Text style={styles.doneBtnPrimaryTxt}>View status</Text>
               </Pressable>
               <Pressable
-                style={({ pressed }) => [styles.doneBtnGhost, pressed && { opacity: 0.92 }]}
+                style={({ pressed }) => [styles.doneBtnGhost, pressed && styles.doneBtnPressed]}
                 onPress={() => {
                   setDoneModalOpen(false);
-                  // Keep a sensible back behavior after closing.
                   if (doneBookingId) navigation.goBack();
                 }}
               >
                 <Text style={styles.doneBtnGhostTxt}>Close</Text>
               </Pressable>
             </View>
-          </GlassPanel>
+          </View>
         </View>
       </Modal>
-      <ScrollView style={styles.page} contentContainerStyle={{ padding: 16, paddingBottom: 220 }} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.page} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
         <GlassPanel style={styles.headerCard} contentStyle={styles.headerCardInner} borderRadius={24} intensity={62}>
           <Text style={styles.title}>Reserve your stay</Text>
           <Text style={styles.sub}>{placeName || "Destination"}</Text>
           <View style={styles.infoBox}>
             <Ionicons name="information-circle" size={18} color={colors.primaryTeal} />
-            <Text style={styles.infoText}>You only need to pay 50% to reserve your booking.</Text>
+            <Text style={styles.infoText}>
+              {paymentOptional
+                ? "Submit your stay details. The owner will confirm directly — no in-app payment is set up for this listing."
+                : "You only need to pay 50% to reserve your booking when this property accepts online payment."}
+            </Text>
           </View>
         </GlassPanel>
 
@@ -450,7 +624,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
             style={styles.inputSm}
             value={fullName}
             onChangeText={setFullName}
-            placeholder="Juan dela Cruz"
+            placeholder="Your full name (e.g. Juan dela Cruz)"
             placeholderTextColor={colors.muted2}
           />
 
@@ -459,7 +633,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
             style={styles.inputSm}
             value={contactNumber}
             onChangeText={setContactNumber}
-            placeholder="09xx xxx xxxx"
+            placeholder="Mobile number (e.g. 09xx xxx xxxx)"
             placeholderTextColor={colors.muted2}
             keyboardType="phone-pad"
           />
@@ -553,51 +727,167 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
 
         <View style={styles.grid2}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Check-in</Text>
-            <TextInput
-              style={styles.inputSm}
-              value={checkIn}
-              onChangeText={setCheckIn}
-              placeholder="2026-06-01"
-              placeholderTextColor={colors.muted2}
-            />
+            <Text style={styles.label}>{isFood ? "Visit date" : "Check-in"}</Text>
+            {Platform.OS === "web" ? (
+              <WebDateInput
+                value={checkIn}
+                onChange={setCheckIn}
+                aria-label={isFood ? "Choose visit date" : "Choose check-in date"}
+              />
+            ) : (
+              <Pressable
+                style={styles.dateFieldBtn}
+                onPress={() => openDatePicker("checkin")}
+                accessibilityRole="button"
+                accessibilityLabel={isFood ? "Choose visit date" : "Choose check-in date"}
+              >
+                <Text style={[styles.dropdownValue, !checkIn.trim() && styles.dateFieldPlaceholder]}>
+                  {DATE_RE.test(checkIn.trim()) ? checkIn.trim() : "Select date"}
+                </Text>
+                <Ionicons name="calendar-outline" size={20} color={colors.muted2} />
+              </Pressable>
+            )}
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Check-out</Text>
-            <TextInput
-              style={styles.inputSm}
-              value={checkOut}
-              onChangeText={setCheckOut}
-              placeholder="2026-06-03"
-              placeholderTextColor={colors.muted2}
-            />
-          </View>
+          {!isFood ? (
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Check-out</Text>
+              {Platform.OS === "web" ? (
+                <WebDateInput value={checkOut} onChange={setCheckOut} aria-label="Choose check-out date" />
+              ) : (
+                <Pressable
+                  style={styles.dateFieldBtn}
+                  onPress={() => openDatePicker("checkout")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose check-out date"
+                >
+                  <Text style={[styles.dropdownValue, !checkOut.trim() && styles.dateFieldPlaceholder]}>
+                    {DATE_RE.test(checkOut.trim()) ? checkOut.trim() : "Select date"}
+                  </Text>
+                  <Ionicons name="calendar-outline" size={20} color={colors.muted2} />
+                </Pressable>
+              )}
+            </View>
+          ) : (
+            <View style={{ flex: 1 }} />
+          )}
         </View>
 
         <View style={styles.grid2}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.label, styles.mtSm]}>Guests</Text>
-            <TextInput
-              style={styles.inputSm}
-              value={guestCount}
-              onChangeText={setGuestCount}
-              keyboardType="number-pad"
-              placeholder="2"
-              placeholderTextColor={colors.muted2}
-            />
+            <View style={[styles.dropdownBtn, styles.dropdownBtnCompact, styles.guestInputWrap]}>
+              <TextInput
+                value={guestCount}
+                onChangeText={(t) => setGuestCount(t.replace(/[^\d]/g, "").slice(0, 2))}
+                placeholder="e.g. 2"
+                placeholderTextColor={colors.muted2}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                style={styles.guestInput}
+                accessibilityLabel="Number of guests"
+              />
+              <Text style={styles.guestSuffix}>{guests === 1 ? "guest" : "guests"}</Text>
+            </View>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.label, styles.mtSm]}>Arrival time</Text>
-            <TextInput
-              style={styles.inputSm}
-              value={arrivalTime}
-              onChangeText={setArrivalTime}
-              placeholder="5:00 pm"
-              placeholderTextColor={colors.muted2}
-              autoCapitalize="none"
-            />
+            <View style={styles.arrivalWrap} accessibilityLabel="Arrival time">
+              <View style={styles.arrivalCombo}>
+                <Pressable
+                  style={({ pressed }) => [styles.arrivalComboHour, pressed && styles.arrivalComboPressed]}
+                  onPress={() => setStayDetailPicker("hour")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Arrival hour, tap to change"
+                >
+                  <Text style={styles.arrivalComboText}>{arrivalHour12}</Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.arrivalComboMeridiem, pressed && styles.arrivalComboPressed]}
+                  onPress={() => setStayDetailPicker("meridiem")}
+                  accessibilityRole="button"
+                  accessibilityLabel="AM or PM, tap to change"
+                >
+                  <Text style={styles.arrivalComboText}>{arrivalMeridiem}</Text>
+                </Pressable>
+              </View>
+            </View>
           </View>
         </View>
+
+        <Modal
+          visible={stayDetailPicker !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setStayDetailPicker(null)}
+        >
+          <Pressable style={styles.modalOverlay} onPress={() => setStayDetailPicker(null)} />
+          <View style={styles.modalSheetWrap} pointerEvents="box-none">
+            <GlassPanel style={styles.modalSheet} contentStyle={styles.modalSheetInner} borderRadius={22} intensity={66}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  {stayDetailPicker === "hour"
+                      ? "Arrival hour"
+                      : stayDetailPicker === "meridiem"
+                        ? "AM or PM"
+                        : ""}
+                </Text>
+                <Pressable style={styles.modalClose} onPress={() => setStayDetailPicker(null)} accessibilityLabel="Close">
+                  <Ionicons name="close" size={22} color={colors.navy} />
+                </Pressable>
+              </View>
+              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                {stayDetailPicker === "hour"
+                  ? HOURS_12.map((h) => {
+                      const on = arrivalHour12 === h;
+                      return (
+                        <Pressable
+                          key={h}
+                          style={[styles.choice, on && styles.choiceOn]}
+                          onPress={() => {
+                            setArrivalHour12(h);
+                            setStayDetailPicker(null);
+                          }}
+                        >
+                          <View style={styles.choiceRow}>
+                            <Text style={styles.choiceTitle}>{h}</Text>
+                            <Ionicons
+                              name={on ? "checkmark-circle" : "ellipse-outline"}
+                              size={22}
+                              color={on ? colors.primaryTeal : colors.muted2}
+                            />
+                          </View>
+                        </Pressable>
+                      );
+                    })
+                  : null}
+                {stayDetailPicker === "meridiem"
+                  ? (["AM", "PM"] as const).map((ap) => {
+                      const on = arrivalMeridiem === ap;
+                      return (
+                        <Pressable
+                          key={ap}
+                          style={[styles.choice, on && styles.choiceOn]}
+                          onPress={() => {
+                            setArrivalMeridiem(ap);
+                            setStayDetailPicker(null);
+                          }}
+                        >
+                          <View style={styles.choiceRow}>
+                            <Text style={styles.choiceTitle}>{ap}</Text>
+                            <Ionicons
+                              name={on ? "checkmark-circle" : "ellipse-outline"}
+                              size={22}
+                              color={on ? colors.primaryTeal : colors.muted2}
+                            />
+                          </View>
+                        </Pressable>
+                      );
+                    })
+                  : null}
+              </ScrollView>
+            </GlassPanel>
+          </View>
+        </Modal>
 
       {operatingDay || operatingNight ? (
         <View style={styles.tripBlock}>
@@ -643,9 +933,11 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
             <Ionicons name="wallet-outline" size={20} color={colors.navy} />
             <Text style={styles.sectionTitle}>Payment summary</Text>
           </View>
-          <Text style={styles.summaryLine}>
-            {`Accommodation: ${nights} night${nights === 1 ? "" : "s"} × \u20B1${pricePerNight.toLocaleString("en-PH")} = \u20B1${accommodationCost.toLocaleString("en-PH")}`}
-          </Text>
+          {!isFood ? (
+            <Text style={styles.summaryLine}>
+              {`Accommodation: ${nights} night${nights === 1 ? "" : "s"} × \u20B1${pricePerNight.toLocaleString("en-PH")} = \u20B1${accommodationCost.toLocaleString("en-PH")}`}
+            </Text>
+          ) : null}
           <Text style={styles.summaryLine}>
             {entranceFeeEach > 0 ? `Entrance fee: \u20B1${entranceFeeEach.toLocaleString("en-PH")} × ${guests} = \u20B1${entranceCost.toLocaleString("en-PH")}` : "Entrance fee: —"}
           </Text>
@@ -660,7 +952,9 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         </GlassPanel>
       ) : (
         <Text style={styles.mutedSmall}>
-          Set valid dates and an accommodation with a nightly rate to see the estimated down payment.
+          {isFood
+            ? "Select a visit date to see the estimated down payment."
+            : "Set valid dates and an accommodation with a nightly rate to see the estimated down payment."}
         </Text>
       )}
 
@@ -685,96 +979,184 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
           <Ionicons name="card-outline" size={20} color={colors.navy} />
           <Text style={styles.sectionTitle}>Payment</Text>
         </View>
-        <Text style={styles.label}>Pay with</Text>
-        {enabledMethods.length === 0 ? (
-          <Text style={styles.warn}>The owner has not enabled any payment method yet.</Text>
+        {paymentOptional ? (
+          <Text style={styles.mutedSmall}>
+            This listing has no GCash, Maya, or PayPal details on file. You can still send your reservation — coordinate
+            payment directly with the owner if needed.
+          </Text>
         ) : (
-          enabledMethods.map((m) => (
-            <Pressable
-              key={m}
-              style={[styles.payRow, paymentMethod === m && styles.payRowOn]}
-              onPress={() => setPaymentMethod(m)}
-            >
-              <Ionicons
-                name={paymentMethod === m ? "radio-button-on" : "radio-button-off"}
-                size={22}
-                color={paymentMethod === m ? colors.primaryTeal : colors.muted2}
-              />
-              <Text style={styles.payLabel}>
-                {m === "gcash" ? "GCash" : m === "maya" ? "Maya" : "PayPal"}
-              </Text>
+          <>
+            <Text style={styles.label}>Pay with</Text>
+            <View style={styles.payCardsRow} accessibilityRole="radiogroup" accessibilityLabel="Payment method">
+              {enabledMethods.map((m) => {
+                const meta = PAY_METHOD_ASSETS[m];
+                const on = paymentMethod === m;
+                return (
+                  <Pressable
+                    key={m}
+                    style={[styles.payCard, on && styles.payCardOn]}
+                    onPress={() => setPaymentMethod(m)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={meta.name}
+                  >
+                    <View style={styles.payCardLogo}>
+                      <Image source={meta.logo} style={styles.payCardLogoImg} resizeMode="contain" />
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {paymentMethod === "gcash" ? (
+              <View style={styles.qrBlock} pointerEvents="box-none">
+                <Text style={styles.mutedSmall}>Send payment to</Text>
+                {gcashAccountName ? <Text style={styles.qrHint}>{gcashAccountName}</Text> : null}
+                {gcashAccountNumber ? <Text style={styles.qrHint}>{gcashAccountNumber}</Text> : gcashLabel ? <Text style={styles.qrHint}>{gcashLabel}</Text> : null}
+                {gcashQrUrl ? (
+                  <Image source={{ uri: gcashQrUrl }} style={styles.qrImg} resizeMode="contain" />
+                ) : (
+                  <Text style={[styles.mutedSmall, { marginTop: 8 }]}>
+                    No QR image on file — pay in the GCash app using the account number above.
+                  </Text>
+                )}
+              </View>
+            ) : null}
+            {paymentMethod === "maya" ? (
+              <View style={styles.qrBlock} pointerEvents="box-none">
+                <Text style={styles.mutedSmall}>Send payment to</Text>
+                {mayaAccountName ? <Text style={styles.qrHint}>{mayaAccountName}</Text> : null}
+                {mayaAccountNumber ? <Text style={styles.qrHint}>{mayaAccountNumber}</Text> : mayaLabel ? <Text style={styles.qrHint}>{mayaLabel}</Text> : null}
+                {mayaQrUrl ? (
+                  <Image source={{ uri: mayaQrUrl }} style={styles.qrImg} resizeMode="contain" />
+                ) : (
+                  <Text style={[styles.mutedSmall, { marginTop: 8 }]}>
+                    No QR image on file — pay in the Maya app using the account number above.
+                  </Text>
+                )}
+              </View>
+            ) : null}
+            {paymentMethod === "paypal" ? (
+              <View style={styles.qrBlock}>
+                <Text style={styles.mutedSmall}>Send payment to</Text>
+                {paypalAccountName ? <Text style={styles.qrHint}>{paypalAccountName}</Text> : null}
+                <Text style={styles.qrHint}>{paypalEmail}</Text>
+              </View>
+            ) : null}
+
+            <Text style={[styles.label, styles.mt]}>Payment reference / transaction ID</Text>
+            <TextInput
+              style={styles.inputSm}
+              value={reference}
+              onChangeText={setReference}
+              placeholder="Ref. no. or transaction ID from your receipt"
+              placeholderTextColor={colors.muted2}
+            />
+
+            <Text style={[styles.label, styles.mt]}>Payment screenshot</Text>
+            <Pressable style={styles.proofBtn} onPress={() => void pickProof()}>
+              <Ionicons name="image-outline" size={20} color={colors.navy} />
+              <Text style={styles.proofBtnTxt}>{proof ? "Change image" : "Attach screenshot"}</Text>
             </Pressable>
-          ))
+            {proof ? <Image source={{ uri: proof.uri }} style={styles.proofPrev} /> : null}
+          </>
         )}
-
-        {paymentMethod === "gcash" && gcashQrUrl ? (
-          <View style={styles.qrBlock} pointerEvents="box-none">
-            <Text style={styles.mutedSmall}>Send payment to</Text>
-            {gcashAccountName ? <Text style={styles.qrHint}>{gcashAccountName}</Text> : null}
-            {gcashAccountNumber ? <Text style={styles.qrHint}>{gcashAccountNumber}</Text> : gcashLabel ? <Text style={styles.qrHint}>{gcashLabel}</Text> : null}
-            <Image source={{ uri: gcashQrUrl }} style={styles.qrImg} resizeMode="contain" pointerEvents="none" />
-          </View>
-        ) : null}
-        {paymentMethod === "maya" && mayaQrUrl ? (
-          <View style={styles.qrBlock} pointerEvents="box-none">
-            <Text style={styles.mutedSmall}>Send payment to</Text>
-            {mayaAccountName ? <Text style={styles.qrHint}>{mayaAccountName}</Text> : null}
-            {mayaAccountNumber ? <Text style={styles.qrHint}>{mayaAccountNumber}</Text> : mayaLabel ? <Text style={styles.qrHint}>{mayaLabel}</Text> : null}
-            <Image source={{ uri: mayaQrUrl }} style={styles.qrImg} resizeMode="contain" pointerEvents="none" />
-          </View>
-        ) : null}
-        {paymentMethod === "paypal" ? (
-          <View style={styles.qrBlock}>
-            <Text style={styles.mutedSmall}>Send payment to</Text>
-            <Text style={styles.qrHint}>{paypalEmail}</Text>
-          </View>
-        ) : null}
-
-        <Text style={[styles.label, styles.mt]}>Payment reference / transaction ID</Text>
-        <TextInput
-          style={styles.inputSm}
-          value={reference}
-          onChangeText={setReference}
-          placeholder="Reference number"
-          placeholderTextColor={colors.muted2}
-        />
-
-        <Text style={[styles.label, styles.mt]}>Payment screenshot</Text>
-        <Pressable style={styles.proofBtn} onPress={() => void pickProof()}>
-          <Ionicons name="image-outline" size={20} color={colors.navy} />
-          <Text style={styles.proofBtnTxt}>{proof ? "Change image" : "Attach screenshot"}</Text>
-        </Pressable>
-        {proof ? <Image source={{ uri: proof.uri }} style={styles.proofPrev} pointerEvents="none" /> : null}
       </GlassPanel>
+
+      <View style={{ marginTop: 14, paddingBottom: 14 }}>
+        {submitMsg ? (
+          <View style={styles.submitMsgBox}>
+            <Ionicons name="alert-circle" size={18} color={colors.danger} />
+            <Text style={styles.submitMsgText}>{submitMsg}</Text>
+          </View>
+        ) : null}
+        <Pressable
+          style={({ pressed }) => [styles.btn, (sending || pressed) && { opacity: 0.92 }, sending && { opacity: 0.7 }]}
+          disabled={sending}
+          onPress={() => {
+            void (async () => {
+              try {
+                await submit();
+              } catch (e) {
+                console.error("[booking] submit failed", e);
+                setSubmitMsg(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+              }
+            })();
+          }}
+        >
+          <Text style={styles.btnTxt}>{sending ? "Submitting…" : "Submit reservation"}</Text>
+        </Pressable>
+      </View>
 
       </ScrollView>
 
-      <View style={styles.footerBar} pointerEvents="box-none">
-        <View style={styles.footerInner}>
-          {submitMsg ? (
-            <View style={styles.submitMsgBox}>
-              <Ionicons name="alert-circle" size={18} color={colors.danger} />
-              <Text style={styles.submitMsgText}>{submitMsg}</Text>
+      {androidDateJob && Platform.OS === "android" ? (
+        <DateTimePicker
+          value={androidDateJob.value}
+          mode="date"
+          display="default"
+          onChange={(event, selected) => {
+            setAndroidDateJob((job) => {
+              if (!job) return null;
+              if (event.type === "set" && selected) {
+                const ymd = formatYmdFromDate(selected);
+                if (job.which === "checkin") setCheckIn(ymd);
+                else setCheckOut(ymd);
+              }
+              return null;
+            });
+          }}
+        />
+      ) : null}
+
+      <Modal
+        visible={iosDateModal != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIosDateModal(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setIosDateModal(null)} />
+        <View style={styles.modalSheetWrap} pointerEvents="box-none">
+          <GlassPanel style={styles.modalSheet} contentStyle={styles.modalSheetInner} borderRadius={22} intensity={66}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {iosDateModal === "checkin"
+                  ? "Check-in date"
+                  : iosDateModal === "checkout"
+                    ? "Check-out date"
+                    : "Date"}
+              </Text>
+              <Pressable style={styles.modalClose} onPress={() => setIosDateModal(null)}>
+                <Ionicons name="close" size={22} color={colors.navy} />
+              </Pressable>
             </View>
-          ) : null}
-          <Pressable
-            style={({ pressed }) => [styles.btn, (sending || pressed) && { opacity: 0.92 }, sending && { opacity: 0.7 }]}
-            disabled={sending}
-            onPress={() => {
-              void (async () => {
-                try {
-                  await submit();
-                } catch (e) {
-                  console.error("[booking] submit failed", e);
-                  setSubmitMsg(e instanceof Error ? e.message : "Something went wrong. Please try again.");
-                }
-              })();
-            }}
-          >
-            <Text style={styles.btnTxt}>{sending ? "Submitting…" : "Submit reservation"}</Text>
-          </Pressable>
+            {iosDateModal ? (
+              <DateTimePicker
+                value={iosPickDate}
+                mode="date"
+                display="spinner"
+                themeVariant="light"
+                onChange={(_, d) => {
+                  if (d) setIosPickDate(d);
+                }}
+              />
+            ) : null}
+            <Pressable
+              style={[styles.doneBtnPrimary, { marginTop: 8 }]}
+              onPress={() => {
+                if (!iosDateModal) return;
+                const ymd = formatYmdFromDate(iosPickDate);
+                if (iosDateModal === "checkin") setCheckIn(ymd);
+                else setCheckOut(ymd);
+                setIosDateModal(null);
+              }}
+            >
+              <Text style={styles.doneBtnPrimaryTxt}>Done</Text>
+            </Pressable>
+          </GlassPanel>
         </View>
-      </View>
+      </Modal>
+
     </View>
   );
 }
@@ -838,6 +1220,59 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.22)",
     color: colors.text,
   },
+  dateFieldBtn: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.64)",
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  dateFieldPlaceholder: {
+    color: colors.muted2,
+    fontWeight: "600",
+  },
+  arrivalCombo: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "stretch",
+    alignSelf: "flex-start",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.64)",
+    backgroundColor: "rgba(255,255,255,0.22)",
+    overflow: "hidden",
+  },
+  arrivalWrap: {
+    alignSelf: "flex-start",
+  },
+  arrivalComboHour: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    minWidth: 52,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  arrivalComboMeridiem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minWidth: 56,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  arrivalComboPressed: {
+    backgroundColor: "rgba(11,184,196,0.12)",
+  },
+  arrivalComboText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.navy,
+    letterSpacing: 0.3,
+  },
   inputLg: {
     marginTop: 6,
     minHeight: 100,
@@ -873,18 +1308,46 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.64)",
     backgroundColor: "rgba(255,255,255,0.22)",
   },
+  dropdownBtnCompact: {
+    marginTop: 6,
+  },
   dropdownValue: { fontSize: 15, fontWeight: "800", color: colors.navy },
   dropdownHint: { marginTop: 3, fontSize: 12.5, color: colors.muted },
+  guestInputWrap: {
+    justifyContent: "space-between",
+  },
+  guestInput: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 16,
+    fontWeight: "900",
+    color: colors.navy,
+    paddingVertical: 0,
+  },
+  guestSuffix: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.muted,
+  },
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    // Darker overlay so modal content stays readable.
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  doneModalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
   },
   modalSheetWrap: {
     flex: 1,
     justifyContent: "flex-end",
     padding: 16,
   },
-  modalSheet: { width: "100%" },
+  modalSheet: {
+    width: "100%",
+    // Make the glass panel less see-through for readability.
+    backgroundColor: "rgba(255,255,255,0.90)",
+  },
   modalSheetInner: { padding: 14 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
   modalTitle: { fontSize: 16, fontWeight: "900", color: colors.navy },
@@ -892,45 +1355,73 @@ const styles = StyleSheet.create({
   doneWrap: {
     flex: 1,
     justifyContent: "center",
-    padding: 18,
+    paddingHorizontal: 24,
+    paddingVertical: 32,
   },
-  doneCard: {
+  /** Solid card (no blur) — avoids Android/Web blur “noise” artifacts behind text. */
+  doneCardSolid: {
     width: "100%",
-  },
-  doneInner: {
-    padding: 16,
-  },
-  doneIcon: {
+    maxWidth: 400,
     alignSelf: "center",
-    width: 66,
-    height: 66,
-    borderRadius: 22,
-    backgroundColor: "rgba(11,184,196,0.14)",
+    backgroundColor: "#ffffff",
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(11,184,196,0.35)",
+    borderColor: "rgba(15, 23, 42, 0.08)",
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 24,
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.12,
+    shadowRadius: 32,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 16,
+  },
+  doneIconSolid: {
+    alignSelf: "center",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.primaryTeal,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    marginBottom: 20,
   },
-  doneTitle: { fontSize: 18, fontWeight: "900", color: colors.navy, textAlign: "center" },
-  doneText: { marginTop: 6, fontSize: 13.5, color: colors.muted, lineHeight: 19, textAlign: "center" },
-  doneBtns: { marginTop: 14, gap: 10 },
+  doneTitle: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: colors.navy,
+    textAlign: "center",
+    letterSpacing: -0.3,
+    lineHeight: 26,
+  },
+  doneText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: colors.muted,
+    lineHeight: 21,
+    textAlign: "center",
+    paddingHorizontal: 4,
+  },
+  doneBtns: { marginTop: 24, gap: 12, width: "100%" },
   doneBtnPrimary: {
     backgroundColor: colors.primaryTeal,
     borderRadius: 14,
-    paddingVertical: 14,
+    paddingVertical: 15,
     alignItems: "center",
+    width: "100%",
   },
   doneBtnPrimaryTxt: { color: "#fff", fontWeight: "900", fontSize: 15 },
   doneBtnGhost: {
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.62)",
-    backgroundColor: "rgba(255,255,255,0.22)",
+    borderWidth: 1.5,
+    borderColor: "rgba(15, 23, 42, 0.14)",
+    backgroundColor: "#f8fafc",
     borderRadius: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: "center",
+    width: "100%",
   },
-  doneBtnGhostTxt: { color: colors.navy, fontWeight: "900", fontSize: 14 },
+  doneBtnGhostTxt: { color: colors.navy, fontWeight: "800", fontSize: 15 },
+  doneBtnPressed: { opacity: 0.88 },
   summaryLine: { fontSize: 13, color: colors.text, lineHeight: 18 },
   totalRow: { marginTop: 10, flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
   summaryTotalLbl: { fontSize: 13, fontWeight: "800", color: colors.muted2 },
@@ -946,19 +1437,47 @@ const styles = StyleSheet.create({
   },
   downpayK: { fontSize: 14, fontWeight: "900", color: colors.navy },
   downpayV: { marginTop: 4, fontSize: 22, fontWeight: "900", color: colors.primaryTeal },
-  payRow: {
+  payCardsRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginTop: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.56)",
-    backgroundColor: "rgba(255,255,255,0.18)",
+    gap: 8,
+    marginTop: 10,
   },
-  payRowOn: { borderColor: "rgba(11,184,196,0.80)", backgroundColor: "rgba(11,184,196,0.10)" },
-  payLabel: { fontSize: 15, fontWeight: "600", color: colors.navy },
+  payCard: {
+    flex: 1,
+    minWidth: 0,
+    maxHeight: 72,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.56)",
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  payCardOn: {
+    borderColor: "rgba(11,184,196,0.95)",
+    backgroundColor: "rgba(11,184,196,0.12)",
+  },
+  payCardLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  payCardLogoImg: {
+    width: 34,
+    height: 34,
+  },
   qrBlock: { marginTop: 12, alignItems: "center" },
   qrHint: { fontSize: 14, fontWeight: "600", color: colors.navy, marginTop: 6, textAlign: "center" },
   qrImg: { width: 200, height: 200, marginTop: 8, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.34)" },
@@ -977,21 +1496,6 @@ const styles = StyleSheet.create({
   },
   proofBtnTxt: { fontWeight: "700", color: colors.navy },
   proofPrev: { marginTop: 10, width: "100%", height: 180, borderRadius: 14, backgroundColor: "rgba(0,0,0,0.06)" },
-  footerBar: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 16,
-    paddingBottom: 18,
-    paddingTop: 10,
-    backgroundColor: "rgba(245,247,250,0.92)",
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  footerInner: {
-    width: "100%",
-  },
   submitMsgBox: {
     flexDirection: "row",
     alignItems: "flex-start",

@@ -22,17 +22,20 @@ const ListingEditorPage = lazy(() =>
 const AnalyticsPage = lazy(() =>
   import("./pages/AnalyticsPage").then((m) => ({ default: m.AnalyticsPage })),
 );
-const UpgradePage = lazy(() =>
-  import("./pages/UpgradePage").then((m) => ({ default: m.UpgradePage })),
+const OwnerSettingsLayout = lazy(() =>
+  import("./layouts/OwnerSettingsLayout").then((m) => ({ default: m.OwnerSettingsLayout })),
 );
 const SettingsPage = lazy(() =>
   import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
+const PaymentAccountsPage = lazy(() =>
+  import("./pages/PaymentAccountsPage").then((m) => ({ default: m.PaymentAccountsPage })),
+);
 const OwnerReservationsPage = lazy(() =>
   import("./pages/OwnerReservationsPage").then((m) => ({ default: m.OwnerReservationsPage })),
 );
-const PaymentAccountsPage = lazy(() =>
-  import("./pages/PaymentAccountsPage").then((m) => ({ default: m.PaymentAccountsPage })),
+const SupportPage = lazy(() =>
+  import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })),
 );
 
 function RouteFallback() {
@@ -52,10 +55,12 @@ export default function App() {
             <Route path="listings/new" element={<ListingEditorPage />} />
             <Route path="listings/:id" element={<ListingEditorPage />} />
             <Route path="reservations" element={<OwnerReservationsPage />} />
-            <Route path="payment-accounts" element={<PaymentAccountsPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
-            <Route path="upgrade" element={<UpgradePage />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route path="support" element={<SupportPage />} />
+            <Route path="settings" element={<OwnerSettingsLayout />}>
+              <Route index element={<SettingsPage />} />
+              <Route path="e-wallet" element={<PaymentAccountsPage />} />
+            </Route>
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

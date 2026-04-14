@@ -9,7 +9,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "HelpSupport">;
 const FAQ = [
   {
     q: "How do I book a destination?",
-    a: "Open Explore or Home, pick a place, then use Book when the business accepts bookings. You need a traveler account and the listing must be premium-enabled.",
+    a: "Open Explore or Home, pick a place, then tap Reserve now. You need a traveler account; the listing must be approved on the platform.",
   },
   {
     q: "How does the itinerary work?",

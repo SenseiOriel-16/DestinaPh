@@ -19,6 +19,7 @@ import { HERO_BACKGROUND } from "../constants/heroBackground";
 import { isValidUsernameFormat, normalizeUsername, resolveLoginEmail } from "../lib/authUsername";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
+import { PasswordField } from "../components/PasswordField";
 import { BrandAppIcon } from "../ui/BrandAppIcon";
 import { GlassPanel } from "../ui/GlassPanel";
 
@@ -240,14 +241,14 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
                 <Text style={styles.label}>Password</Text>
                 <View style={styles.inputShell}>
                   <Ionicons name="lock-closed-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    secureTextEntry
+                  <PasswordField
+                    variant="inline"
+                    inputStyle={styles.input}
                     value={password}
                     onChangeText={setPassword}
-                    placeholder="••••••••"
-                    placeholderTextColor={colors.muted2}
+                    placeholder={mode === "signup" ? "Minimum 6 characters" : "Enter password"}
                     autoComplete={mode === "signup" ? "password-new" : "password"}
+                    textContentType={mode === "signup" ? "newPassword" : "password"}
                   />
                 </View>
               </View>
@@ -257,14 +258,14 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
                   <Text style={styles.label}>Confirm password</Text>
                   <View style={styles.inputShell}>
                     <Ionicons name="lock-closed-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      secureTextEntry
+                    <PasswordField
+                      variant="inline"
+                      inputStyle={styles.input}
                       value={confirmPassword}
                       onChangeText={setConfirmPassword}
-                      placeholder="••••••••"
-                      placeholderTextColor={colors.muted2}
+                      placeholder="Re-enter password"
                       autoComplete="password-new"
+                      textContentType="newPassword"
                     />
                   </View>
                 </View>

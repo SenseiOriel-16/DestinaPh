@@ -2,6 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 
+const RESERVATIONS_REFRESH_EVENT = "destinaph-owner-reservations-refresh";
+
+type BusinessLite = {
+  name: string | null;
+};
+
 type Row = {
   id: string;
   status: string;
@@ -16,7 +22,8 @@ type Row = {
   payment_reference: string | null;
   payment_proof_storage_path: string | null;
   notes: string | null;
-  businesses: { name: string } | null;
+  owner_note: string | null;
+  businesses: BusinessLite | null;
 };
 
 function peso(n: number | null | undefined) {
@@ -36,7 +43,10 @@ export function OwnerReservationsPage() {
   const [proofUrls, setProofUrls] = useState<Record<string, string>>({});
   const [proofState, setProofState] = useState<Record<string, "idle" | "loading" | "ready" | "missing">>({});
   const [proofModal, setProofModal] = useState<{ open: boolean; url: string; title: string } | null>(null);
+  const [rejectModal, setRejectModal] = useState<{ open: boolean; id: string; title: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
   const [filter, setFilter] = useState<"all" | "needs_review" | "confirmed" | "cancelled">("needs_review");
+  const [bizIds, setBizIds] = useState<string[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem("ownerReservations.readIds.v1");
@@ -46,6 +56,11 @@ export function OwnerReservationsPage() {
       return new Set();
     }
   });
+
+  useEffect(() => {
+    // Clear booking notifications when user opens Reservations page.
+    window.dispatchEvent(new Event("destinaph-owner-notifs-clear-bookings"));
+  }, []);
 
   const persistReadIds = (next: Set<string>) => {
     setReadIds(next);
@@ -72,6 +87,7 @@ export function OwnerReservationsPage() {
       return;
     }
     const bizIds = (myBiz ?? []).map((b: { id: string }) => b.id);
+    setBizIds(bizIds);
     if (bizIds.length === 0) {
       setRows([]);
       setProofUrls({});
@@ -81,7 +97,7 @@ export function OwnerReservationsPage() {
     const { data, error } = await supabase
       .from("bookings")
       .select(
-        "id,status,requested_at,accommodation_name,check_in,check_out,guest_count,estimated_total_pesos,downpayment_pesos,payment_method,payment_reference,payment_proof_storage_path,notes,business_id,businesses(name)",
+        "id,status,requested_at,accommodation_name,check_in,check_out,guest_count,estimated_total_pesos,downpayment_pesos,payment_method,payment_reference,payment_proof_storage_path,notes,owner_note,business_id,businesses(name)",
       )
       .in("business_id", bizIds)
       .order("requested_at", { ascending: false });
@@ -102,6 +118,56 @@ export function OwnerReservationsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    // Refresh the table when notification hook detects new bookings (works even if Realtime is flaky).
+    let t: number | null = null;
+    const onRefresh = () => {
+      if (t != null) window.clearTimeout(t);
+      t = window.setTimeout(() => void load(), 250);
+    };
+    window.addEventListener(RESERVATIONS_REFRESH_EVENT, onRefresh as EventListener);
+    return () => {
+      if (t != null) window.clearTimeout(t);
+      window.removeEventListener(RESERVATIONS_REFRESH_EVENT, onRefresh as EventListener);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (!bizIds.length) return;
+
+    let t: number | null = null;
+    const scheduleReload = () => {
+      if (t != null) window.clearTimeout(t);
+      t = window.setTimeout(() => void load(), 400);
+    };
+
+    const filterStr = `business_id=in.(${bizIds.join(",")})`;
+    const channel = supabase
+      .channel("destinaph-owner-reservations")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "bookings", filter: filterStr }, () => {
+        scheduleReload();
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "bookings", filter: filterStr }, () => {
+        scheduleReload();
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "bookings", filter: filterStr }, () => {
+        scheduleReload();
+      })
+      .subscribe((status, err) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn(
+            "[reservations] Realtime channel issue — enable Replication for bookings in Supabase. The page still loads on refresh.",
+            err,
+          );
+        }
+      });
+
+    return () => {
+      if (t != null) window.clearTimeout(t);
+      void supabase.removeChannel(channel);
+    };
+  }, [bizIds, load]);
 
   // Mark currently loaded "needs action" bookings as read once the page has rendered the list.
   useEffect(() => {
@@ -140,17 +206,17 @@ export function OwnerReservationsPage() {
     return rows;
   }, [rows, filter]);
 
-  const markAllRead = () => {
-    const next = new Set(readIds);
-    for (const r of rows) {
-      if (!needsHostAction(r.status)) continue;
-      next.add(r.id);
-    }
-    persistReadIds(next);
-  };
-
   const setStatus = async (id: string, status: "confirmed" | "cancelled") => {
-    if (status === "cancelled" && !confirm("Reject this reservation?")) return;
+    if (status === "cancelled") {
+      const r = rows.find((x) => x.id === id);
+      setRejectReason((r?.owner_note ?? "").trim());
+      setRejectModal({
+        open: true,
+        id,
+        title: `${r?.businesses?.name ?? "Reservation"} · Reject reservation`,
+      });
+      return;
+    }
     setBusyId(id);
     setMsg(null);
 
@@ -173,6 +239,27 @@ export function OwnerReservationsPage() {
       setMsg(error.message);
       return;
     }
+    await load();
+  };
+
+  const submitReject = async () => {
+    const rm = rejectModal;
+    if (!rm?.open) return;
+    const id = rm.id;
+    setBusyId(id);
+    setMsg(null);
+    const note = rejectReason.trim();
+    const { error } = await supabase
+      .from("bookings")
+      .update({ status: "cancelled", owner_note: note ? note : null })
+      .eq("id", id);
+    setBusyId(null);
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+    setRejectModal(null);
+    setRejectReason("");
     await load();
   };
 
@@ -261,13 +348,77 @@ export function OwnerReservationsPage() {
           </div>
         </div>
       ) : null}
+      {rejectModal?.open ? (
+        <div
+          className="proof-modal reject-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Reject reservation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setRejectModal(null);
+          }}
+        >
+          <div className="proof-modal__panel reject-modal__panel">
+            <div className="proof-modal__header reject-modal__header">
+              <div className="proof-modal__title reject-modal__title">{rejectModal.title}</div>
+              <button
+                type="button"
+                className="proof-modal__close reject-modal__close"
+                onClick={() => setRejectModal(null)}
+                disabled={busyId === rejectModal.id}
+              >
+                Close
+              </button>
+            </div>
+            <div className="field reject-modal__body">
+              <label htmlFor="reject-reason" className="reject-modal__label">
+                Reason (shown to traveler)
+              </label>
+              <textarea
+                id="reject-reason"
+                className="input reject-modal__textarea"
+                rows={5}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="e.g. Fully booked for those dates, please choose another day."
+              />
+            </div>
+            <div className="reject-modal__actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setRejectModal(null)}
+                disabled={busyId === rejectModal.id}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => void submitReject()}
+                disabled={busyId === rejectModal.id}
+              >
+                {busyId === rejectModal.id ? "Rejecting…" : "Reject reservation"}
+              </button>
+            </div>
+            <div className="proof-modal__hint reject-modal__hint">
+              This will update the traveler&apos;s booking status in real time.
+            </div>
+          </div>
+        </div>
+      ) : null}
       <header className="owner-reservations__hero">
         <div className="owner-reservations__hero-text">
           <p className="owner-reservations__eyebrow">Bookings</p>
           <h1 className="owner-reservations__title">Reservations</h1>
           <p className="owner-reservations__lead">
-            Review traveler requests with payment proof and reference. Confirm when the 50% down payment matches your
-            expectations — or decline if something does not look right.
+            Review traveler reservation requests: stay details and optional payment proof when travelers pay online.
+            Confirm when everything looks right, or decline if you cannot accommodate the booking. Manage your receiving
+            GCash, Maya, and PayPal details in{" "}
+            <Link className="owner-reservations__inline-link" to="/settings/e-wallet">
+              Settings → E-Wallet
+            </Link>
+            .
           </p>
           {rows.length > 0 ? (
             <div className="owner-reservations__stats">
@@ -305,15 +456,15 @@ export function OwnerReservationsPage() {
           </div>
           <h2 className="owner-reservations-empty__title">No reservations yet</h2>
           <p className="owner-reservations-empty__text">
-            When travelers reserve a <strong>Premium</strong> listing from the app, their stay details, payment method,
-            and proof appear here for you to confirm or decline.
+            When travelers request a reservation from the DestinaPH app, their stay details (and payment proof when
+            they pay online) appear here for you to confirm or decline.
           </p>
           <div className="owner-reservations-empty__actions">
-            <Link className="owner-reservations-empty__btn owner-reservations-empty__btn--primary" to="/upgrade">
-              Upgrade a listing to Premium
-            </Link>
-            <Link className="owner-reservations-empty__btn owner-reservations-empty__btn--ghost" to="/listings">
+            <Link className="owner-reservations-empty__btn owner-reservations-empty__btn--primary" to="/listings">
               Manage listings
+            </Link>
+            <Link className="owner-reservations-empty__btn owner-reservations-empty__btn--ghost" to="/">
+              Back to dashboard
             </Link>
           </div>
         </div>
@@ -350,11 +501,6 @@ export function OwnerReservationsPage() {
                 Cancelled
               </button>
             </div>
-            <div className="owner-reservations__toolbar-actions">
-              <button type="button" className="btn btn-ghost btn-inline" onClick={markAllRead} disabled={unreadCount === 0}>
-                Mark all as read
-              </button>
-            </div>
           </div>
 
           <div className="owner-reservations__table-wrap">
@@ -364,8 +510,8 @@ export function OwnerReservationsPage() {
                 <th>Property</th>
                 <th>Stay</th>
                 <th>Guest / room</th>
-                <th>Payment</th>
-                <th>Status</th>
+                <th>Guest payment</th>
+                <th>Requested</th>
                 <th>Proof</th>
                 <th>Actions</th>
               </tr>
@@ -395,15 +541,9 @@ export function OwnerReservationsPage() {
                     </div>
                   </td>
                   <td>
-                    {r.status === "pending_review" || r.status === "requested" ? (
-                      <span className="pill pending">{r.status === "requested" ? "Simple request" : "Review"}</span>
-                    ) : r.status === "confirmed" ? (
-                      <span className="pill approved">Confirmed</span>
-                    ) : r.status === "cancelled" ? (
-                      <span className="pill rejected">Rejected</span>
-                    ) : (
-                      <span className="pill pending">{r.status}</span>
-                    )}
+                    <div className="owner-reservations__cell-muted">
+                      {new Date(r.requested_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}
+                    </div>
                   </td>
                   <td>
                     {r.payment_proof_storage_path ? (
@@ -480,7 +620,7 @@ export function OwnerReservationsPage() {
               })}
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="owner-reservations__cell-note">
+                  <td colSpan={8} className="owner-reservations__cell-note">
                     No reservations in this view.
                   </td>
                 </tr>

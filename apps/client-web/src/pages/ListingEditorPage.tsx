@@ -18,6 +18,25 @@ type Category = { id: string; name: string; slug: string };
 type AccRow = AccommodationItem;
 
 const RESORT_SLUG = "resorts-leisure";
+const NATURE_SLUG = "nature-adventure";
+const FOOD_SLUG = "food-dining";
+
+const BEST_TIMES = ["Breakfast", "Lunch", "Dinner"] as const;
+type BestTime = (typeof BEST_TIMES)[number];
+
+function parseCostRangePerPerson(inputRaw: string): { min: number; max: number } | null {
+  const s = inputRaw.trim().toLowerCase();
+  if (!s) return null;
+  // Accept: 100-200, 100 - 200, 100 to 200
+  const m = s.match(/^(\d{1,7})\s*(?:-|\sto\s)\s*(\d{1,7})$/);
+  if (!m) return null;
+  const a = Math.round(Number(m[1]));
+  const b = Math.round(Number(m[2]));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (a < 0 || b < 0) return null;
+  if (a > b) return null;
+  return { min: a, max: b };
+}
 
 function psgcCodeFromSlug(slug: string | null | undefined): string | null {
   if (!slug?.startsWith("psgc-")) return null;
@@ -51,12 +70,14 @@ export function ListingEditorPage() {
   const [name, setName] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [shortDescription, setShortDescription] = useState("");
+  const [allowReservations, setAllowReservations] = useState(true);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [operatingDay, setOperatingDay] = useState(false);
   const [operatingNight, setOperatingNight] = useState(false);
   const [entranceFeeDay, setEntranceFeeDay] = useState("");
   const [entranceFeeNight, setEntranceFeeNight] = useState("");
+  const [natureEntranceFee, setNatureEntranceFee] = useState("");
   const [addressLine, setAddressLine] = useState("");
   const [latitudeStr, setLatitudeStr] = useState("");
   const [longitudeStr, setLongitudeStr] = useState("");
@@ -65,28 +86,23 @@ export function ListingEditorPage() {
   ]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [existingPhotoCount, setExistingPhotoCount] = useState(0);
-  const [listingIsPremium, setListingIsPremium] = useState(false);
-  const [payGcashEnabled, setPayGcashEnabled] = useState(false);
-  const [payMayaEnabled, setPayMayaEnabled] = useState(false);
-  const [payPaypalEnabled, setPayPaypalEnabled] = useState(false);
-  const [payGcashLabel, setPayGcashLabel] = useState("");
-  const [payMayaLabel, setPayMayaLabel] = useState("");
-  const [payPaypalEmail, setPayPaypalEmail] = useState("");
-  const [payGcashAccountName, setPayGcashAccountName] = useState("");
-  const [payGcashAccountNumber, setPayGcashAccountNumber] = useState("");
-  const [payMayaAccountName, setPayMayaAccountName] = useState("");
-  const [payMayaAccountNumber, setPayMayaAccountNumber] = useState("");
-  const [payGcashQrPath, setPayGcashQrPath] = useState<string | null>(null);
-  const [payMayaQrPath, setPayMayaQrPath] = useState<string | null>(null);
-  const [pendingGcashQr, setPendingGcashQr] = useState<File | null>(null);
-  const [pendingMayaQr, setPendingMayaQr] = useState<File | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saveSuccessKind, setSaveSuccessKind] = useState<null | "created" | "updated">(null);
   const [detailReady, setDetailReady] = useState(isNew);
+  const [ratingSummary, setRatingSummary] = useState<{
+    total: number;
+    average: number | null;
+    byStar: Record<1 | 2 | 3 | 4 | 5, number>;
+  } | null>(null);
+  const [ratingBreakdownOpen, setRatingBreakdownOpen] = useState(false);
+  const [foodCostRange, setFoodCostRange] = useState("");
+  const [bestTimes, setBestTimes] = useState<BestTime[]>([]);
 
   const categorySlug = categories.find((c) => c.id === categoryId)?.slug ?? "";
   const isResort = categorySlug === RESORT_SLUG;
+  const isNature = categorySlug === NATURE_SLUG;
+  const isFood = categorySlug === FOOD_SLUG;
 
   const provinceOptions = useMemo(
     () => psgcProvinces.map((p) => ({ value: p.code, label: p.name })),
@@ -200,6 +216,19 @@ export function ListingEditorPage() {
   }, [isResort]);
 
   useEffect(() => {
+    if (!isNature) {
+      setNatureEntranceFee("");
+    }
+  }, [isNature]);
+
+  useEffect(() => {
+    // Food listings do not have accommodations.
+    if (isFood) {
+      setAccommodations([{ name: "", pax: "", price_pesos: 0, available: true }]);
+    }
+  }, [isFood]);
+
+  useEffect(() => {
     if (isNew) {
       setExistingPhotoCount(0);
     }
@@ -231,16 +260,21 @@ export function ListingEditorPage() {
         operating_night?: boolean | null;
         entrance_fee_day_pesos?: number | null;
         entrance_fee_night_pesos?: number | null;
+        estimated_cost_min_pesos?: number | null;
+        estimated_cost_max_pesos?: number | null;
+        best_visit_times?: string[] | null;
       };
       setName(String(row.name ?? ""));
       setCategoryId(String(row.category_id ?? ""));
       setShortDescription(String(row.short_description ?? row.description ?? ""));
+      setAllowReservations(row.allow_reservations !== false);
       setTags(Array.isArray(row.tags) ? row.tags : []);
 
       const catRel = row.categories;
       const catSlug =
         (Array.isArray(catRel) ? (catRel[0] as { slug?: string } | undefined)?.slug : catRel?.slug) ?? "";
       const rowIsResort = catSlug === RESORT_SLUG;
+      const rowIsNature = catSlug === NATURE_SLUG;
       const od = Boolean(row.operating_day);
       const on = Boolean(row.operating_night);
       const dFee = row.entrance_fee_day_pesos;
@@ -261,6 +295,13 @@ export function ListingEditorPage() {
         setEntranceFeeDay("");
         setEntranceFeeNight("");
       }
+
+      if (rowIsNature) {
+        const fee = row.entrance_fee_pesos;
+        setNatureEntranceFee(fee != null && Number.isFinite(Number(fee)) ? String(fee) : "");
+      } else {
+        setNatureEntranceFee("");
+      }
       setAddressLine(String(row.address_line ?? ""));
       const latRaw = row.latitude as number | string | null | undefined;
       const lngRaw = row.longitude as number | string | null | undefined;
@@ -278,27 +319,36 @@ export function ListingEditorPage() {
         );
       }
 
-      setListingIsPremium(Boolean(row.is_premium));
-      setPayGcashEnabled(Boolean(row.pay_gcash_enabled));
-      setPayMayaEnabled(Boolean(row.pay_maya_enabled));
-      setPayPaypalEnabled(Boolean(row.pay_paypal_enabled));
-      setPayGcashLabel(String(row.pay_gcash_account_label ?? ""));
-      setPayMayaLabel(String(row.pay_maya_account_label ?? ""));
-      setPayPaypalEmail(String(row.pay_paypal_email ?? ""));
-      setPayGcashAccountName(String((row as any).pay_gcash_account_name ?? ""));
-      setPayGcashAccountNumber(String((row as any).pay_gcash_account_number ?? ""));
-      setPayMayaAccountName(String((row as any).pay_maya_account_name ?? ""));
-      setPayMayaAccountNumber(String((row as any).pay_maya_account_number ?? ""));
-      setPayGcashQrPath((row.pay_gcash_qr_path as string | null) ?? null);
-      setPayMayaQrPath((row.pay_maya_qr_path as string | null) ?? null);
-      setPendingGcashQr(null);
-      setPendingMayaQr(null);
+      const cmin = row.estimated_cost_min_pesos;
+      const cmax = row.estimated_cost_max_pesos;
+      if (cmin != null && cmax != null && Number.isFinite(Number(cmin)) && Number.isFinite(Number(cmax))) {
+        setFoodCostRange(`${Math.round(Number(cmin))}-${Math.round(Number(cmax))}`);
+      } else {
+        setFoodCostRange("");
+      }
+      const bt = Array.isArray(row.best_visit_times) ? row.best_visit_times : [];
+      const nextTimes = bt.filter((x): x is BestTime => BEST_TIMES.includes(x as BestTime));
+      setBestTimes(nextTimes);
 
       const { count: photoCount, error: photoCountErr } = await supabase
         .from("business_photos")
         .select("id", { count: "exact", head: true })
         .eq("business_id", id!);
       setExistingPhotoCount(photoCountErr ? 0 : photoCount ?? 0);
+
+      const ra = row.rating_average as number | null | undefined;
+      const rc = Number(row.rating_count ?? 0);
+      const { data: starRows } = await supabase.from("business_ratings").select("stars").eq("business_id", id!);
+      const byStar: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      for (const s of starRows ?? []) {
+        const n = Number((s as { stars?: number }).stars);
+        if (n >= 1 && n <= 5) byStar[n as 1 | 2 | 3 | 4 | 5]++;
+      }
+      setRatingSummary({
+        total: Number.isFinite(rc) ? Math.floor(rc) : 0,
+        average: ra != null && Number.isFinite(Number(ra)) ? Number(ra) : null,
+        byStar,
+      });
 
       const muniId = String(row.municipality_id ?? "");
       setLegacyGeoNote(null);
@@ -453,6 +503,13 @@ export function ListingEditorPage() {
         available: Boolean(a.available),
       }));
 
+    const foodCost = isFood ? parseCostRangePerPerson(foodCostRange) : null;
+    if (isFood && !foodCost) {
+      setMsg("Estimated cost per person is required for Food. Use format: 100-200, 100 - 200, or 100 to 200.");
+      setBusy(false);
+      return;
+    }
+
     let latitude: number | null = null;
     let longitude: number | null = null;
     const latTrim = latitudeStr.trim();
@@ -520,23 +577,25 @@ export function ListingEditorPage() {
       entrance_fee_pesos = candidates.length ? Math.min(...candidates) : null;
     }
 
-    const payPayload =
-      !isNew && listingIsPremium
-        ? {
-            pay_gcash_enabled: payGcashEnabled,
-            pay_maya_enabled: payMayaEnabled,
-            pay_paypal_enabled: payPaypalEnabled,
-            pay_gcash_account_label: payGcashLabel.trim() || null,
-            pay_maya_account_label: payMayaLabel.trim() || null,
-            pay_paypal_email: payPaypalEnabled ? payPaypalEmail.trim() || null : null,
-            pay_gcash_account_name: payGcashEnabled ? payGcashAccountName.trim() || null : null,
-            pay_gcash_account_number: payGcashEnabled ? payGcashAccountNumber.trim() || null : null,
-            pay_maya_account_name: payMayaEnabled ? payMayaAccountName.trim() || null : null,
-            pay_maya_account_number: payMayaEnabled ? payMayaAccountNumber.trim() || null : null,
-            pay_gcash_qr_path: payGcashEnabled ? payGcashQrPath : null,
-            pay_maya_qr_path: payMayaEnabled ? payMayaQrPath : null,
-          }
-        : {};
+    if (isNature) {
+      const raw = natureEntranceFee.trim();
+      if (raw !== "") {
+        if (Number.isNaN(Number(raw))) {
+          setMsg("Entrance fee must be a number, or leave it empty.");
+          setBusy(false);
+          return;
+        }
+        entrance_fee_pesos = Math.max(0, Math.round(Number(raw)));
+        pricing_text = `Entrance: ₱${entrance_fee_pesos}`;
+      } else {
+        entrance_fee_pesos = null;
+        // keep pricing_text null unless other category logic sets it
+      }
+    }
+
+    if (isFood && foodCost) {
+      pricing_text = `₱${foodCost.min.toLocaleString("en-PH")}–₱${foodCost.max.toLocaleString("en-PH")} / person`;
+    }
 
     const payload = {
       owner_id: uid,
@@ -545,6 +604,7 @@ export function ListingEditorPage() {
       subcategory: null as string | null,
       short_description: shortDescription.trim() || null,
       description: shortDescription.trim() || null,
+      allow_reservations: allowReservations,
       tags: tags.length ? tags : [],
       operating_day,
       operating_night,
@@ -555,12 +615,14 @@ export function ListingEditorPage() {
       municipality_id: geo.out_municipality_id,
       barangay_id: geo.out_barangay_id || null,
       address_line: addressLine.trim() || null,
-      accommodations: accPayload,
+      accommodations: isFood ? [] : accPayload,
       pricing_text,
+      estimated_cost_min_pesos: isFood && foodCost ? foodCost.min : null,
+      estimated_cost_max_pesos: isFood && foodCost ? foodCost.max : null,
+      best_visit_times: isFood ? bestTimes : [],
       latitude,
       longitude,
       status: "approved" as const,
-      ...payPayload,
     };
     try {
       if (isNew) {
@@ -584,40 +646,6 @@ export function ListingEditorPage() {
           setMsg(error.message);
           setBusy(false);
           return;
-        }
-        const bid = id!;
-        if (listingIsPremium) {
-          const uploadQr = async (file: File, base: "gcash" | "maya") => {
-            const raw = file.name.split(".").pop()?.toLowerCase() || "jpg";
-            const safe = ["jpg", "jpeg", "png", "webp"].includes(raw) ? raw.replace("jpeg", "jpg") : "jpg";
-            const path = `${bid}/${base}.${safe}`;
-            const { error: uerr } = await supabase.storage.from("booking-qrcodes").upload(path, file, {
-              upsert: true,
-              contentType: file.type || "image/jpeg",
-            });
-            if (uerr) throw new Error(uerr.message);
-            if (base === "gcash") {
-              await supabase.from("businesses").update({ pay_gcash_qr_path: path }).eq("id", bid);
-              setPayGcashQrPath(path);
-            } else {
-              await supabase.from("businesses").update({ pay_maya_qr_path: path }).eq("id", bid);
-              setPayMayaQrPath(path);
-            }
-          };
-          try {
-            if (pendingGcashQr) {
-              await uploadQr(pendingGcashQr, "gcash");
-              setPendingGcashQr(null);
-            }
-            if (pendingMayaQr) {
-              await uploadQr(pendingMayaQr, "maya");
-              setPendingMayaQr(null);
-            }
-          } catch (e) {
-            setMsg(e instanceof Error ? e.message : "QR upload failed");
-            setBusy(false);
-            return;
-          }
         }
         if (pendingFiles.length) {
           await uploadMany(id!, pendingFiles);
@@ -680,204 +708,243 @@ export function ListingEditorPage() {
       {msg && <div className="alert-banner alert-banner--error">{msg}</div>}
       <form onSubmit={onSubmit}>
         <div className="editor-grid">
-          <div className="card editor-card">
-            <h2 className="editor-card__title">Business information</h2>
-            <div className="field">
-              <label htmlFor="name">Business name</label>
-              <input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="cat">Category</label>
-              <select id="cat" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="short">Short description</label>
-              <textarea
-                id="short"
-                rows={4}
-                value={shortDescription}
-                onChange={(e) => setShortDescription(e.target.value)}
-                placeholder="Brief highlight for travelers"
-                required
-              />
-            </div>
-            <div className="field">
-              <label>Tags</label>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                {tags.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    className="pill approved"
-                    style={{ cursor: "pointer", border: "none" }}
-                    onClick={() => removeTag(t)}
-                  >
-                    {t} ×
-                  </button>
-                ))}
+          <div className="editor-col">
+            <div className="card editor-card">
+              <h2 className="editor-card__title">Business information</h2>
+              <div className="field">
+                <label htmlFor="name">Business name</label>
+                <input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addTag();
-                    }
-                  }}
-                  placeholder="Type a tag and press Add"
-                />
-                <button type="button" className="btn btn-outline" onClick={addTag}>
-                  Add tag
-                </button>
-              </div>
-            </div>
-            {isResort && (
-              <>
-                <div className="field">
-                  <span className="field__group-label" id="operating-hours-label">
-                    Operating hours
-                  </span>
-                  <div
-                    className="field-checkbox-row"
-                    role="group"
-                    aria-labelledby="operating-hours-label"
-                  >
-                    <label className="field-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={operatingDay}
-                        onChange={(e) => setOperatingDay(e.target.checked)}
-                      />
-                      <span>Day</span>
-                    </label>
-                    <label className="field-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={operatingNight}
-                        onChange={(e) => setOperatingNight(e.target.checked)}
-                      />
-                      <span>Night</span>
-                    </label>
-                  </div>
-                  <p style={{ fontSize: 13, color: "var(--muted)", margin: "4px 0 0" }}>
-                    Check when you are open; set the entrance fee for each period you offer.
-                  </p>
+              <div className="field">
+                <span className="field__group-label" id="allow-res-label">
+                  Reservations
+                </span>
+                <div className="field-checkbox-row" role="group" aria-labelledby="allow-res-label">
+                  <label className="field-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={allowReservations}
+                      onChange={(e) => setAllowReservations(e.target.checked)}
+                    />
+                    <span>{allowReservations ? "Booking enabled" : "Booking disabled"}</span>
+                  </label>
                 </div>
-                {operatingDay && (
+                <p className="editor-help" style={{ margin: "4px 0 0" }}>
+                  Toggle off if you don’t accept online reservations for this destination. Travelers won’t be able to
+                  reserve when disabled.
+                </p>
+              </div>
+              <div className="field">
+                <label htmlFor="cat">Category</label>
+                <select id="cat" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="short">Short description</label>
+                <textarea
+                  id="short"
+                  rows={4}
+                  value={shortDescription}
+                  onChange={(e) => setShortDescription(e.target.value)}
+                  placeholder="Brief highlight for travelers"
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Tags</label>
+                <div className="editor-tag-pills">
+                  {tags.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className="pill approved"
+                      style={{ cursor: "pointer", border: "none" }}
+                      onClick={() => removeTag(t)}
+                    >
+                      {t} ×
+                    </button>
+                  ))}
+                </div>
+                <div className="editor-tag-inputrow">
+                  <input
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTag();
+                      }
+                    }}
+                    placeholder="Type a tag and press Add"
+                  />
+                  <button type="button" className="btn btn-outline" onClick={addTag}>
+                    Add tag
+                  </button>
+                </div>
+              </div>
+              {isResort && (
+                <>
                   <div className="field">
-                    <label htmlFor="fee-day">Day entrance fee (₱)</label>
-                    <input
-                      id="fee-day"
-                      type="number"
-                      min={0}
-                      step={1}
-                      placeholder="e.g. 350"
-                      value={entranceFeeDay}
-                      onChange={(e) => setEntranceFeeDay(e.target.value)}
-                    />
+                    <span className="field__group-label" id="operating-hours-label">
+                      Operating hours
+                    </span>
+                    <div className="field-checkbox-row" role="group" aria-labelledby="operating-hours-label">
+                      <label className="field-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={operatingDay}
+                          onChange={(e) => setOperatingDay(e.target.checked)}
+                        />
+                        <span>Day</span>
+                      </label>
+                      <label className="field-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={operatingNight}
+                          onChange={(e) => setOperatingNight(e.target.checked)}
+                        />
+                        <span>Night</span>
+                      </label>
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--muted)", margin: "4px 0 0" }}>
+                      Check when you are open; set the entrance fee for each period you offer.
+                    </p>
                   </div>
-                )}
-                {operatingNight && (
-                  <div className="field">
-                    <label htmlFor="fee-night">Night entrance fee (₱)</label>
-                    <input
-                      id="fee-night"
-                      type="number"
-                      min={0}
-                      step={1}
-                      placeholder="e.g. 400"
-                      value={entranceFeeNight}
-                      onChange={(e) => setEntranceFeeNight(e.target.value)}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+                  {operatingDay && (
+                    <div className="field">
+                      <label htmlFor="fee-day">Day entrance fee (₱)</label>
+                      <input
+                        id="fee-day"
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder="e.g. 350"
+                        value={entranceFeeDay}
+                        onChange={(e) => setEntranceFeeDay(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  {operatingNight && (
+                    <div className="field">
+                      <label htmlFor="fee-night">Night entrance fee (₱)</label>
+                      <input
+                        id="fee-night"
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder="e.g. 400"
+                        value={entranceFeeNight}
+                        onChange={(e) => setEntranceFeeNight(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
 
-          <div className="card editor-card">
-            <h2 className="editor-card__title">Address & resort images</h2>
-            <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 12px" }}>
-              Provinces, cities/municipalities, and barangays come from the official{" "}
-              <strong>PSGC</strong> (Philippine Standard Geographic Code) public API (
+            {isNature && (
+              <div className="field">
+                <label htmlFor="fee-nature">Entrance / environmental fee (₱) (optional)</label>
+                <input
+                  id="fee-nature"
+                  type="number"
+                  min={0}
+                  step={1}
+                  placeholder="e.g. 50"
+                  value={natureEntranceFee}
+                  onChange={(e) => setNatureEntranceFee(e.target.value)}
+                />
+                <p className="editor-help" style={{ margin: "4px 0 0" }}>
+                  Optional for public areas (e.g., river/swimming spots) that still require an environmental fee.
+                </p>
+              </div>
+            )}
+            </div>
+
+            <div className="card editor-card">
+              <h2 className="editor-card__title">Location</h2>
+            <p className="editor-help">
+              Provinces, cities/municipalities, and barangays come from the official <strong>PSGC</strong> public API (
               <a href="https://psgc.gitlab.io/" target="_blank" rel="noreferrer">
                 psgc.gitlab.io
               </a>
               ).
             </p>
-            {geoError && (
-              <p style={{ fontSize: 13, color: "var(--danger, #c0392b)", marginBottom: 12 }}>{geoError}</p>
-            )}
-            {legacyGeoNote && (
-              <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>{legacyGeoNote}</p>
-            )}
+            {geoError ? <p className="editor-help editor-help--error">{geoError}</p> : null}
+            {legacyGeoNote ? <p className="editor-help">{legacyGeoNote}</p> : null}
 
-            <div className="field">
-              <label htmlFor="prov">Province</label>
-              <SearchableSelect
-                id="prov"
-                value={geoProvCode}
-                onChange={setGeoProvCode}
-                options={provinceOptions}
-                disabled={!psgcProvinces.length}
-                placeholder="— Select province —"
-                searchPlaceholder="Search province…"
-                allowClear
-                clearLabel="— Select province —"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="mun">City / Municipality</label>
-              <SearchableSelect
-                id="mun"
-                value={geoMunCode}
-                onChange={setGeoMunCode}
-                options={municipalityOptions}
-                disabled={!geoProvCode || geoLoadingMun}
-                placeholder={geoLoadingMun ? "Loading…" : "— Select city or municipality —"}
-                searchPlaceholder="Search city or municipality…"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="brgy">Barangay (optional)</label>
-              <SearchableSelect
-                id="brgy"
-                value={geoBrgyCode}
-                onChange={setGeoBrgyCode}
-                options={barangayOptions}
-                disabled={!geoMunCode || geoLoadingBrgy}
-                placeholder={geoLoadingBrgy ? "Loading…" : "— No barangay selected —"}
-                searchPlaceholder="Search barangay…"
-                allowClear
-                clearLabel="— No barangay selected —"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="addr">Zone & street</label>
-              <input
-                id="addr"
-                placeholder="Street, zone, landmark"
-                value={addressLine}
-                onChange={(e) => setAddressLine(e.target.value)}
-              />
+            <div className="editor-2col">
+              <div className="field">
+                <label htmlFor="prov">Province</label>
+                <SearchableSelect
+                  id="prov"
+                  value={geoProvCode}
+                  onChange={setGeoProvCode}
+                  options={provinceOptions}
+                  disabled={!psgcProvinces.length}
+                  placeholder="— Select province —"
+                  searchPlaceholder="Search province…"
+                  allowClear
+                  clearLabel="— Select province —"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="mun">City / Municipality</label>
+                <SearchableSelect
+                  id="mun"
+                  value={geoMunCode}
+                  onChange={setGeoMunCode}
+                  options={municipalityOptions}
+                  disabled={!geoProvCode || geoLoadingMun}
+                  placeholder={geoLoadingMun ? "Loading…" : "— Select city or municipality —"}
+                  searchPlaceholder="Search city or municipality…"
+                />
+              </div>
             </div>
 
-            <div className="field">
-              <span className="field__group-label">Map location (optional)</span>
-              <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 8px" }}>
+            <div className="editor-2col editor-2col--tight">
+              <div className="field">
+                <label htmlFor="brgy">Barangay (optional)</label>
+                <SearchableSelect
+                  id="brgy"
+                  value={geoBrgyCode}
+                  onChange={setGeoBrgyCode}
+                  options={barangayOptions}
+                  disabled={!geoMunCode || geoLoadingBrgy}
+                  placeholder={geoLoadingBrgy ? "Loading…" : "— No barangay selected —"}
+                  searchPlaceholder="Search barangay…"
+                  allowClear
+                  clearLabel="— No barangay selected —"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="addr">Zone & street</label>
+                <input
+                  id="addr"
+                  placeholder="Street, zone, landmark"
+                  value={addressLine}
+                  onChange={(e) => setAddressLine(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <details className="editor-disclosure">
+              <summary>
+                <span>Map location (optional)</span>
+                <span className="editor-disclosure__meta">
+                  {latitudeStr.trim() || longitudeStr.trim() ? "Set" : "Not set"}
+                </span>
+              </summary>
+              <p className="editor-help" style={{ marginTop: 10 }}>
                 Used for the traveler app map and directions. Get coordinates from Google Maps (long-press the pin, then
                 copy latitude / longitude).
               </p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div>
+              <div className="editor-2col editor-2col--tight">
+                <div className="field">
                   <label htmlFor="lat">Latitude</label>
                   <input
                     id="lat"
@@ -888,7 +955,7 @@ export function ListingEditorPage() {
                     onChange={(e) => setLatitudeStr(e.target.value)}
                   />
                 </div>
-                <div>
+                <div className="field">
                   <label htmlFor="lng">Longitude</label>
                   <input
                     id="lng"
@@ -900,278 +967,241 @@ export function ListingEditorPage() {
                   />
                 </div>
               </div>
-            </div>
-
-            <div className="field">
-              <label>Accommodations</label>
-              <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 8px" }}>
-                Name, capacity (pax), price in pesos, and whether this type is still available for guests — add as
-                many rows as you need.
-              </p>
-              <div className="acc-editor-rows">
-                {accommodations.map((row, i) => (
-                  <div className="acc-editor-row" key={i}>
-                    <input
-                      placeholder="e.g. Cabin"
-                      value={row.name}
-                      onChange={(e) => setAcc(i, { name: e.target.value })}
-                    />
-                    <input
-                      placeholder="e.g. 4-6 pax"
-                      value={row.pax}
-                      onChange={(e) => setAcc(i, { pax: e.target.value })}
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="₱"
-                      value={row.price_pesos || ""}
-                      onChange={(e) => setAcc(i, { price_pesos: Number(e.target.value) || 0 })}
-                    />
-                    <label className="acc-editor-avail">
-                      <input
-                        type="checkbox"
-                        checked={row.available}
-                        onChange={(e) => setAcc(i, { available: e.target.checked })}
-                      />
-                      <span>Available</span>
-                    </label>
-                    <button type="button" className="icon-btn" onClick={() => removeAccRow(i)} title="Remove">
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button type="button" className="btn btn-outline" style={{ marginTop: 10 }} onClick={addAccRow}>
-                + Add accommodation
-              </button>
-            </div>
-
-            {!isNew && listingIsPremium ? (
-              <div className="field" style={{ marginTop: 8 }}>
-                <h3 className="editor-card__title" style={{ marginBottom: 8 }}>
-                  Booking payments (traveler app)
-                </h3>
-                <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 12px" }}>
-                  Turn on only the channels you use. Upload a QR for GCash and Maya. For PayPal, enter the email or
-                  PayPal.me handle travelers should pay. Travelers only see methods you enable. Save the listing after
-                  changing QR images.
-                </p>
-                <label className="acc-editor-avail" style={{ marginBottom: 10 }}>
-                  <input
-                    type="checkbox"
-                    checked={payGcashEnabled}
-                    onChange={(e) => setPayGcashEnabled(e.target.checked)}
-                  />
-                  <span>Accept GCash</span>
-                </label>
-                {payGcashEnabled ? (
-                  <>
-                    <label htmlFor="payGcashName">GCash account name</label>
-                    <input
-                      id="payGcashName"
-                      value={payGcashAccountName}
-                      onChange={(e) => setPayGcashAccountName(e.target.value)}
-                      placeholder="e.g. Juan D."
-                    />
-                    <label htmlFor="payGcashNo" style={{ marginTop: 8 }}>
-                      GCash account number
-                    </label>
-                    <input
-                      id="payGcashNo"
-                      inputMode="numeric"
-                      value={payGcashAccountNumber}
-                      onChange={(e) => setPayGcashAccountNumber(e.target.value)}
-                      placeholder="e.g. 09xxxxxxxxx"
-                    />
-                    <p style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 0" }}>
-                      Optional legacy field (older app versions):
-                    </p>
-                    <label htmlFor="payGcashLbl" style={{ marginTop: 6 }}>
-                      GCash label (legacy)
-                    </label>
-                    <input
-                      id="payGcashLbl"
-                      value={payGcashLabel}
-                      onChange={(e) => setPayGcashLabel(e.target.value)}
-                      placeholder="09xx / Juan D."
-                    />
-                    <label htmlFor="payGcashQr" style={{ marginTop: 8 }}>
-                      GCash QR image
-                    </label>
-                    <input
-                      id="payGcashQr"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setPendingGcashQr(e.target.files?.[0] ?? null)}
-                    />
-                    {payGcashQrPath ? (
-                      <img
-                        src={supabase.storage.from("booking-qrcodes").getPublicUrl(payGcashQrPath).data.publicUrl}
-                        alt="GCash QR"
-                        style={{ maxHeight: 140, marginTop: 8, borderRadius: 8 }}
-                      />
-                    ) : null}
-                  </>
-                ) : null}
-
-                <label className="acc-editor-avail" style={{ marginTop: 14 }}>
-                  <input
-                    type="checkbox"
-                    checked={payMayaEnabled}
-                    onChange={(e) => setPayMayaEnabled(e.target.checked)}
-                  />
-                  <span>Accept Maya</span>
-                </label>
-                {payMayaEnabled ? (
-                  <>
-                    <label htmlFor="payMayaName">Maya account name</label>
-                    <input
-                      id="payMayaName"
-                      value={payMayaAccountName}
-                      onChange={(e) => setPayMayaAccountName(e.target.value)}
-                      placeholder="e.g. Juan D."
-                    />
-                    <label htmlFor="payMayaNo" style={{ marginTop: 8 }}>
-                      Maya account number
-                    </label>
-                    <input
-                      id="payMayaNo"
-                      inputMode="numeric"
-                      value={payMayaAccountNumber}
-                      onChange={(e) => setPayMayaAccountNumber(e.target.value)}
-                      placeholder="e.g. 09xxxxxxxxx"
-                    />
-                    <p style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 0" }}>
-                      Optional legacy field (older app versions):
-                    </p>
-                    <label htmlFor="payMayaLbl" style={{ marginTop: 6 }}>
-                      Maya label (legacy)
-                    </label>
-                    <input
-                      id="payMayaLbl"
-                      value={payMayaLabel}
-                      onChange={(e) => setPayMayaLabel(e.target.value)}
-                    />
-                    <label htmlFor="payMayaQr" style={{ marginTop: 8 }}>
-                      Maya QR image
-                    </label>
-                    <input
-                      id="payMayaQr"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setPendingMayaQr(e.target.files?.[0] ?? null)}
-                    />
-                    {payMayaQrPath ? (
-                      <img
-                        src={supabase.storage.from("booking-qrcodes").getPublicUrl(payMayaQrPath).data.publicUrl}
-                        alt="Maya QR"
-                        style={{ maxHeight: 140, marginTop: 8, borderRadius: 8 }}
-                      />
-                    ) : null}
-                  </>
-                ) : null}
-
-                <label className="acc-editor-avail" style={{ marginTop: 14 }}>
-                  <input
-                    type="checkbox"
-                    checked={payPaypalEnabled}
-                    onChange={(e) => setPayPaypalEnabled(e.target.checked)}
-                  />
-                  <span>Accept PayPal</span>
-                </label>
-                {payPaypalEnabled ? (
-                  <>
-                    <label htmlFor="payPal">PayPal email or PayPal.me link</label>
-                    <input
-                      id="payPal"
-                      value={payPaypalEmail}
-                      onChange={(e) => setPayPaypalEmail(e.target.value)}
-                      placeholder="you@email.com or paypal.me/yourname"
-                    />
-                  </>
-                ) : null}
-              </div>
-            ) : !isNew ? (
-              <p style={{ fontSize: 13, color: "var(--muted)" }}>
-                Upgrade this listing to <strong>Premium</strong> to accept paid reservations from the DestinaPH app.
-              </p>
-            ) : null}
-
-            <div className="field">
-              <label>Resort images</label>
-              <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 8px" }}>
-                Up to {MAX_LISTING_PHOTOS} photos total (including photos already saved). Each file is resized and
-                saved as JPEG before upload to save storage.
-              </p>
-              <div
-                className="upload-zone"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={onDrop}
-                onClick={() => {
-                  if (existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS) return;
-                  document.getElementById("imgs")?.click();
-                }}
-                role="presentation"
-                style={{
-                  opacity: existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS ? 0.55 : 1,
-                  pointerEvents: existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS ? "none" : "auto",
-                }}
-              >
-                <span className="upload-zone__icon">⬆</span>
-                <p>
-                  <strong>Upload images</strong>
-                </p>
-                <p className="upload-zone__hint">
-                  Drag and drop or click — max {MAX_LISTING_PHOTOS} photos ({existingPhotoCount} saved,{" "}
-                  {pendingFiles.length} queued)
-                </p>
-                {pendingFiles.length > 0 && (
-                  <ul style={{ fontSize: 13, marginTop: 10, textAlign: "left", listStyle: "none", padding: 0 }}>
-                    {pendingFiles.map((f, i) => (
-                      <li
-                        key={`${f.name}-${i}`}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 8,
-                          marginBottom: 6,
-                        }}
-                      >
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{f.name}</span>
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          title="Remove"
-                          onClick={(ev) => {
-                            ev.stopPropagation();
-                            setPendingFiles((prev) => prev.filter((_, j) => j !== i));
-                          }}
-                        >
-                          ×
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <input
-                  id="imgs"
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="upload-zone__input"
-                  onChange={(e) => {
-                    const list = e.target.files;
-                    void (async () => {
-                      await ingestImageFiles(list);
-                      e.target.value = "";
-                    })();
-                  }}
-                />
-              </div>
+            </details>
             </div>
           </div>
+
+          <div className="editor-col">
+            {!isNew && ratingSummary ? (
+              <div className="card editor-card listing-ratings-card">
+                <h2 className="editor-card__title">Traveler ratings</h2>
+                {ratingSummary.total === 0 ? (
+                  <p className="listing-ratings__summary">
+                    No ratings yet. Travelers can rate your place from the app after visiting.
+                  </p>
+                ) : (
+                  <>
+                    <p className="listing-ratings__summary">
+                      <strong>{ratingSummary.total}</strong> {ratingSummary.total === 1 ? "user has" : "users have"} rated
+                      {ratingSummary.average != null ? (
+                        <>
+                          {" "}
+                          · Average <strong>{ratingSummary.average.toFixed(1)}</strong>★
+                        </>
+                      ) : null}
+                    </p>
+                    <div className="listing-ratings__dropdown">
+                      <button
+                        type="button"
+                        className="listing-ratings__toggle"
+                        aria-expanded={ratingBreakdownOpen}
+                        onClick={() => setRatingBreakdownOpen((o) => !o)}
+                      >
+                        {ratingBreakdownOpen ? "Hide breakdown" : "Show breakdown by stars"}
+                        <span className="listing-ratings__chev" aria-hidden>
+                          {ratingBreakdownOpen ? "\u25B2" : "\u25BC"}
+                        </span>
+                      </button>
+                      {ratingBreakdownOpen ? (
+                        <ul className="listing-ratings__breakdown">
+                          {([5, 4, 3, 2, 1] as const).map((star) => {
+                            const n = ratingSummary.byStar[star];
+                            return (
+                              <li key={star} className="listing-ratings__row">
+                                <span className="listing-ratings__stars">
+                                  {star} star{star === 1 ? "" : "s"}
+                                </span>
+                                <span className="listing-ratings__count">
+                                  {n} {n === 1 ? "user" : "users"}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
+
+            <div className="card editor-card">
+              <h2 className="editor-card__title">{isFood ? "Food details" : "Accommodations"}</h2>
+
+              {isFood ? (
+                <div className="editor-2col editor-2col--tight">
+                  <div className="field">
+                    <label htmlFor="food-cost">Estimated cost per person</label>
+                    <input
+                      id="food-cost"
+                      inputMode="numeric"
+                      placeholder="e.g. 100-200"
+                      value={foodCostRange}
+                      onChange={(e) => setFoodCostRange(e.target.value)}
+                    />
+                    <p className="editor-help" style={{ marginTop: 6 }}>
+                      Format: <code>100-200</code>, <code>100 - 200</code>, or <code>100 to 200</code>.
+                    </p>
+                  </div>
+                  <div className="field">
+                    <span className="field__group-label">Best time to visit</span>
+                    <div className="editor-pill-row">
+                      {BEST_TIMES.map((t) => {
+                        const on = bestTimes.includes(t);
+                        return (
+                          <button
+                            key={t}
+                            type="button"
+                            className={on ? "pill approved" : "pill"}
+                            style={{ border: "none", cursor: "pointer" }}
+                            onClick={() => {
+                              setBestTimes((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+                            }}
+                          >
+                            {t}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="editor-help" style={{ marginTop: 6 }}>
+                      Pick one or more.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <details className="editor-disclosure" open={accommodations.some((a) => (a.name ?? "").trim().length > 0)}>
+                  <summary>
+                    <span>Accommodation rows</span>
+                    <span className="editor-disclosure__meta">
+                      {accommodations.length} row{accommodations.length === 1 ? "" : "s"}
+                    </span>
+                  </summary>
+                  <p className="editor-help" style={{ marginTop: 10 }}>
+                    Name, capacity (pax), price in pesos, and whether this type is still available for guests.
+                  </p>
+                  <div className="acc-editor-rows">
+                    {accommodations.map((row, i) => (
+                      <div className="acc-editor-row" key={i}>
+                        <input
+                          placeholder="e.g. Cabin"
+                          value={row.name}
+                          onChange={(e) => setAcc(i, { name: e.target.value })}
+                        />
+                        <input
+                          placeholder="e.g. 4-6 pax"
+                          value={row.pax}
+                          onChange={(e) => setAcc(i, { pax: e.target.value })}
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="₱"
+                          value={row.price_pesos || ""}
+                          onChange={(e) => setAcc(i, { price_pesos: Number(e.target.value) || 0 })}
+                        />
+                        <label className="acc-editor-avail">
+                          <input
+                            type="checkbox"
+                            checked={row.available}
+                            onChange={(e) => setAcc(i, { available: e.target.checked })}
+                          />
+                          <span>Available</span>
+                        </label>
+                        <button type="button" className="icon-btn" onClick={() => removeAccRow(i)} title="Remove">
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" className="btn btn-outline" style={{ marginTop: 10 }} onClick={addAccRow}>
+                    + Add accommodation
+                  </button>
+                </details>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="card editor-card">
+          <h2 className="editor-card__title">Photos</h2>
+          <details className="editor-disclosure" open={pendingFiles.length > 0 || existingPhotoCount === 0}>
+            <summary>
+              <span>{isResort ? "Resort images" : "Listing images"}</span>
+              <span className="editor-disclosure__meta">
+                {existingPhotoCount} saved · {pendingFiles.length} queued
+              </span>
+            </summary>
+            <p className="editor-help" style={{ marginTop: 10 }}>
+              Up to {MAX_LISTING_PHOTOS} photos total (including photos already saved). Each file is resized and saved as
+              JPEG before upload to save storage.
+            </p>
+            <div
+              className="upload-zone"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={onDrop}
+              onClick={() => {
+                if (existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS) return;
+                document.getElementById("imgs")?.click();
+              }}
+              role="presentation"
+              style={{
+                opacity: existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS ? 0.55 : 1,
+                pointerEvents: existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS ? "none" : "auto",
+              }}
+            >
+              <span className="upload-zone__icon">⬆</span>
+              <p>
+                <strong>Upload images</strong>
+              </p>
+              <p className="upload-zone__hint">
+                Drag and drop or click — max {MAX_LISTING_PHOTOS} photos ({existingPhotoCount} saved,{" "}
+                {pendingFiles.length} queued)
+              </p>
+              {pendingFiles.length > 0 && (
+                <ul style={{ fontSize: 13, marginTop: 10, textAlign: "left", listStyle: "none", padding: 0 }}>
+                  {pendingFiles.map((f, i) => (
+                    <li
+                      key={`${f.name}-${i}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{f.name}</span>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        title="Remove"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setPendingFiles((prev) => prev.filter((_, j) => j !== i));
+                        }}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <input
+                id="imgs"
+                type="file"
+                accept="image/*"
+                multiple
+                className="upload-zone__input"
+                onChange={(e) => {
+                  const list = e.target.files;
+                  void (async () => {
+                    await ingestImageFiles(list);
+                    e.target.value = "";
+                  })();
+                }}
+              />
+            </div>
+          </details>
         </div>
 
         <div className="page-footer-actions">

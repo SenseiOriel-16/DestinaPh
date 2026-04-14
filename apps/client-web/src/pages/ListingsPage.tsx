@@ -20,9 +20,12 @@ type Row = {
   categories: { name: string; slug?: string } | null;
   municipalities: { name: string } | null;
   business_photos: Photo[] | null;
+  rating_average: number | null;
+  rating_count: number | null;
 };
 
 const RESORT_SLUG = "resorts-leisure";
+const FOOD_SLUG = "food-dining";
 
 function statusLabel(status: string) {
   if (status === "approved") return "Published";
@@ -53,7 +56,7 @@ export function ListingsPage() {
       const { data } = await supabase
         .from("businesses")
         .select(
-          "id,name,status,views,clicks,short_description,pricing_text,operating_day,operating_night,accommodations,categories(name,slug),municipalities(name),business_photos(storage_path,sort_order)",
+          "id,name,status,views,clicks,short_description,pricing_text,operating_day,operating_night,accommodations,rating_average,rating_count,categories(name,slug),municipalities(name),business_photos(storage_path,sort_order)",
         )
         .eq("owner_id", uid)
         .order("created_at", { ascending: false });
@@ -171,6 +174,7 @@ export function ListingsPage() {
           const banner = bannerUrl(r);
           const acc = accommodationsFor(r);
           const isResort = r.categories?.slug === RESORT_SLUG;
+          const isFood = r.categories?.slug === FOOD_SLUG;
           const hoursParts: string[] = [];
           if (isResort && r.operating_day) hoursParts.push("Day");
           if (isResort && r.operating_night) hoursParts.push("Night");
@@ -205,6 +209,12 @@ export function ListingsPage() {
                   <span className="listing-owner-card__chip listing-owner-card__chip--stat">
                     {(r.views ?? 0).toLocaleString()} views
                   </span>
+                  {r.rating_count != null && r.rating_count > 0 && r.rating_average != null ? (
+                    <span className="listing-owner-card__chip listing-owner-card__chip--rating" title="Traveler ratings">
+                      ★ {Number(r.rating_average).toFixed(1)} · {r.rating_count}{" "}
+                      {r.rating_count === 1 ? "rating" : "ratings"}
+                    </span>
+                  ) : null}
                 </div>
 
                 {isResort && (hoursParts.length > 0 || r.pricing_text) && (
@@ -222,51 +232,59 @@ export function ListingsPage() {
                   </div>
                 )}
 
-                <section className="listing-owner-card__acc" aria-labelledby={`acc-${r.id}`}>
-                  <div className="listing-owner-card__acc-head">
-                    <h3 className="listing-owner-card__acc-title" id={`acc-${r.id}`}>
-                      Accommodations
-                    </h3>
-                    <p className="listing-owner-card__acc-hint">
-                      Turn off <strong>Available</strong> when a type is full or not offered so travelers see accurate
-                      options before they go.
-                    </p>
-                  </div>
-                  {acc.length === 0 ? (
-                    <p className="listing-owner-card__acc-empty">
-                      No room types yet.{" "}
-                      <Link to={`/listings/${r.id}`} className="link-teal">
-                        Edit listing
-                      </Link>{" "}
-                      to add accommodations.
-                    </p>
-                  ) : (
-                    <ul className="listing-owner-card__acc-list">
-                      {acc.map((a, i) => {
-                        const busy = savingAccKey === `${r.id}:${i}`;
-                        return (
-                          <li className="listing-owner-card__acc-item" key={`${a.name}-${i}`}>
-                            <div className="listing-owner-card__acc-info">
-                              <span className="listing-owner-card__acc-name">{a.name}</span>
-                              <span className="listing-owner-card__acc-meta">
-                                {a.pax ? `${a.pax} · ` : ""}₱{a.price_pesos.toLocaleString()}
-                              </span>
-                            </div>
-                            <label className={`listing-owner-card__avail${busy ? " is-busy" : ""}`}>
-                              <input
-                                type="checkbox"
-                                checked={a.available}
-                                disabled={busy}
-                                onChange={(e) => void setAccommodationAvailable(r.id, i, e.target.checked)}
-                              />
-                              <span>{a.available ? "Available" : "Unavailable"}</span>
-                            </label>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </section>
+                {!isFood ? (
+                  <details className="listing-owner-card__acc" open={false}>
+                    <summary className="listing-owner-card__acc-summary" aria-labelledby={`acc-${r.id}`}>
+                      <span className="listing-owner-card__acc-title" id={`acc-${r.id}`}>
+                        Accommodations
+                      </span>
+                      <span className="listing-owner-card__acc-meta-pill">
+                        {acc.length} type{acc.length === 1 ? "" : "s"}
+                      </span>
+                    </summary>
+
+                    <div className="listing-owner-card__acc-body">
+                      <p className="listing-owner-card__acc-hint">
+                        Turn off <strong>Available</strong> when a type is full or not offered so travelers see accurate
+                        options before they go.
+                      </p>
+                      {acc.length === 0 ? (
+                        <p className="listing-owner-card__acc-empty">
+                          No room types yet.{" "}
+                          <Link to={`/listings/${r.id}`} className="link-teal">
+                            Edit listing
+                          </Link>{" "}
+                          to add accommodations.
+                        </p>
+                      ) : (
+                        <ul className="listing-owner-card__acc-list">
+                          {acc.map((a, i) => {
+                            const busy = savingAccKey === `${r.id}:${i}`;
+                            return (
+                              <li className="listing-owner-card__acc-item" key={`${a.name}-${i}`}>
+                                <div className="listing-owner-card__acc-info">
+                                  <span className="listing-owner-card__acc-name">{a.name}</span>
+                                  <span className="listing-owner-card__acc-meta">
+                                    {a.pax ? `${a.pax} · ` : ""}₱{a.price_pesos.toLocaleString()}
+                                  </span>
+                                </div>
+                                <label className={`listing-owner-card__avail${busy ? " is-busy" : ""}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={a.available}
+                                    disabled={busy}
+                                    onChange={(e) => void setAccommodationAvailable(r.id, i, e.target.checked)}
+                                  />
+                                  <span>{a.available ? "Available" : "Unavailable"}</span>
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </details>
+                ) : null}
 
                 <div className="listing-owner-card__actions">
                   <Link to={`/listings/${r.id}`} className="btn btn-primary btn-inline">

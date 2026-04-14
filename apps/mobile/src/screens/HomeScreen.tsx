@@ -43,6 +43,9 @@ type Featured = {
   address_line: string | null;
   rating_average?: number | null;
   rating_count?: number | null;
+  estimated_cost_min_pesos?: number | null;
+  estimated_cost_max_pesos?: number | null;
+  best_visit_times?: string[] | null;
   municipalities: { name: string } | null;
   provinces: { name: string } | null;
   barangays: { name: string } | null;
@@ -63,7 +66,6 @@ const CATEGORY_CARD_HEIGHT = 148;
 export function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
-  const [featured, setFeatured] = useState<Featured[]>([]);
   const [recommendedNear, setRecommendedNear] = useState<NearRow[]>([]);
   const [hasLocation, setHasLocation] = useState(false);
   const heroCtaPulse = useRef(new Animated.Value(1)).current;
@@ -75,19 +77,6 @@ export function HomeScreen({ navigation }: Props) {
 
   const nearCardWidth = useMemo(() => Math.min(320, Math.max(260, windowWidth - 52)), [windowWidth]);
   const nearSnapGap = 14;
-
-  const loadFeatured = useCallback(async () => {
-    const { data } = await supabase
-      .from("businesses")
-      .select(
-        "id,name,description,address_line,rating_average,rating_count,municipalities(name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
-      )
-      .eq("status", "approved")
-      .eq("is_featured", true)
-      .order("sort_order", { ascending: true, foreignTable: "business_photos" })
-      .limit(12);
-    setFeatured((data as unknown as Featured[]) ?? []);
-  }, []);
 
   const loadRecommended = useCallback(async () => {
     const slugs = await getInterestSlugs();
@@ -114,7 +103,7 @@ export function HomeScreen({ navigation }: Props) {
     const { data } = await supabase
       .from("businesses")
       .select(
-        "id,name,description,address_line,latitude,longitude,rating_average,rating_count,categories(slug,name),municipalities(name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
+        "id,name,description,address_line,latitude,longitude,rating_average,rating_count,estimated_cost_min_pesos,estimated_cost_max_pesos,best_visit_times,categories(slug,name),municipalities(name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
       )
       .eq("status", "approved")
       .order("sort_order", { ascending: true, foreignTable: "business_photos" });
@@ -143,17 +132,13 @@ export function HomeScreen({ navigation }: Props) {
     setRecommendedNear(withDist.slice(0, 20));
   }, []);
 
-  useEffect(() => {
-    void loadFeatured();
-  }, [loadFeatured]);
-
   useFocusEffect(
     useCallback(() => {
       void loadRecommended();
     }, [loadRecommended]),
   );
 
-  const heroTarget = featured[0];
+  const heroTarget = recommendedNear[0];
 
   useEffect(() => {
     const anim = Animated.loop(
@@ -306,16 +291,24 @@ export function HomeScreen({ navigation }: Props) {
                   <Text numberOfLines={2} style={styles.nearName}>
                     {item.name}
                   </Text>
-                  {distLabel ? <Text style={styles.nearDist}>{distLabel}</Text> : null}
+                  <View style={styles.nearMetaRow}>
+                    {distLabel ? (
+                      <View style={[styles.nearPill, styles.nearPillTeal]}>
+                        <Ionicons name="navigate-outline" size={13} color={colors.primaryTeal} />
+                        <Text style={[styles.nearPillText, styles.nearPillTextTeal]}>{distLabel}</Text>
+                      </View>
+                    ) : null}
+                    <View style={[styles.nearPill, styles.nearPillStar]}>
+                      <Ionicons name="star" size={13} color={colors.star} />
+                      <Text style={styles.nearPillText}>{formatRatingPill(item.rating_average, item.rating_count)}</Text>
+                    </View>
+                  </View>
+
                   <View style={styles.nearMunRow}>
-                    <Ionicons name="location-outline" size={14} color={colors.primaryTeal} />
+                    <Ionicons name="location-outline" size={14} color={colors.muted2} />
                     <Text numberOfLines={1} style={styles.nearMun}>
                       {mun}
                     </Text>
-                  </View>
-                  <View style={styles.nearRatingRow}>
-                    <Ionicons name="star" size={13} color={colors.star} />
-                    <Text style={styles.nearRatingText}>{formatRatingPill(item.rating_average, item.rating_count)}</Text>
                   </View>
                 </Pressable>
               );
@@ -323,44 +316,6 @@ export function HomeScreen({ navigation }: Props) {
           </ScrollView>
         </>
       )}
-
-      <View style={styles.sectionHead}>
-        <Text style={styles.sectionTitle}>Featured Destinations</Text>
-        <Pressable onPress={() => navigation.navigate("Explore")}>
-          <Text style={styles.viewAll}>View All</Text>
-        </Pressable>
-      </View>
-      <FlatList
-        horizontal
-        data={featured}
-        keyExtractor={(item) => item.id}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 14, paddingRight: 8 }}
-        renderItem={({ item }) => {
-          const uri = firstPhotoPublicUrl(item.business_photos);
-          return (
-          <Pressable onPress={() => navigation.navigate("Detail", { id: item.id })} style={styles.destCard}>
-            {uri ? (
-              <Image source={{ uri }} style={styles.destImg} resizeMode="cover" />
-            ) : (
-              <View style={[styles.destImg, styles.destImgEmpty]}>
-                <Ionicons name="image-outline" size={22} color={colors.muted2} />
-              </View>
-            )}
-            <Text numberOfLines={1} style={styles.destName}>
-              {item.name}
-            </Text>
-            <Text numberOfLines={2} style={styles.destLoc}>
-              {formatBusinessAddress(item)}
-            </Text>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={14} color={colors.star} />
-              <Text style={styles.ratingNum}>{formatRatingPill(item.rating_average, item.rating_count)}</Text>
-            </View>
-          </Pressable>
-          );
-        }}
-      />
     </ScrollView>
   );
 }
@@ -593,17 +548,45 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.navy,
   },
-  nearDist: {
-    marginTop: 4,
-    fontSize: 13,
-    fontWeight: "700",
+  nearMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+  },
+  nearPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.pageBg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  nearPillTeal: {
+    backgroundColor: "rgba(8,143,143,0.08)",
+    borderColor: "rgba(8,143,143,0.18)",
+  },
+  nearPillStar: {
+    backgroundColor: "rgba(245,158,11,0.10)",
+    borderColor: "rgba(245,158,11,0.18)",
+  },
+  nearPillText: {
+    fontSize: 12.5,
+    fontWeight: "800",
+    color: colors.navy,
+  },
+  nearPillTextTeal: {
     color: colors.primaryTeal,
   },
   nearMunRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    marginTop: 6,
+    gap: 6,
+    marginTop: 10,
   },
   nearMun: {
     flex: 1,
@@ -611,15 +594,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.muted2,
   },
-  nearRatingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 6,
-  },
-  nearRatingText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.navy,
-  },
+  nearCost: { marginTop: 8, fontSize: 12.5, fontWeight: "800", color: colors.navy },
 });

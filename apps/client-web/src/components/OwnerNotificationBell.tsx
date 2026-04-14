@@ -56,7 +56,7 @@ export function OwnerNotificationBell() {
             <div className="notif-dropdown__head">Notifications</div>
             {items.length === 0 ? (
               <p className="notif-dropdown__empty">
-                You&apos;re all caught up. We&apos;ll notify you when premium is enabled or travelers rate your listings.
+                You&apos;re all caught up. We&apos;ll notify you about reservations and traveler ratings.
               </p>
 
             ) : (

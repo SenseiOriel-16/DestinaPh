@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ClientEditorSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
@@ -6,7 +6,6 @@ import { supabase } from "../lib/supabaseClient";
 type Biz = {
   id: string;
   name: string;
-  is_premium: boolean;
   pay_gcash_enabled: boolean;
   pay_gcash_qr_path: string | null;
   pay_gcash_account_name: string | null;
@@ -17,16 +16,45 @@ type Biz = {
   pay_maya_account_number: string | null;
   pay_paypal_enabled: boolean;
   pay_paypal_email: string | null;
-  // legacy (optional)
+  pay_paypal_account_name: string | null;
   pay_gcash_account_label: string | null;
   pay_maya_account_label: string | null;
 };
 
 const QR_BUCKET = "booking-qrcodes";
+const MAX_QR_BYTES = 5 * 1024 * 1024;
+
+const E_WALLET_SAVE_SUCCESS = "E-wallet settings saved successfully.";
 
 function publicQrUrl(path: string | null) {
   if (!path) return null;
   return supabase.storage.from(QR_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+function ToggleSwitch({
+  checked,
+  onChange,
+  id,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  id: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      id={id}
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      className={`ewallet-switch ${checked ? "ewallet-switch--on" : ""}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="ewallet-switch__knob" />
+    </button>
+  );
 }
 
 export function PaymentAccountsPage() {
@@ -36,12 +64,16 @@ export function PaymentAccountsPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const gcashInputRef = useRef<HTMLInputElement | null>(null);
+  const mayaInputRef = useRef<HTMLInputElement | null>(null);
+
   const [gcashEnabled, setGcashEnabled] = useState(false);
   const [gcashName, setGcashName] = useState("");
   const [gcashNumber, setGcashNumber] = useState("");
   const [gcashLabelLegacy, setGcashLabelLegacy] = useState("");
   const [gcashQrPath, setGcashQrPath] = useState<string | null>(null);
   const [gcashQrFile, setGcashQrFile] = useState<File | null>(null);
+  const [gcashLocalPreview, setGcashLocalPreview] = useState<string | null>(null);
 
   const [mayaEnabled, setMayaEnabled] = useState(false);
   const [mayaName, setMayaName] = useState("");
@@ -49,9 +81,31 @@ export function PaymentAccountsPage() {
   const [mayaLabelLegacy, setMayaLabelLegacy] = useState("");
   const [mayaQrPath, setMayaQrPath] = useState<string | null>(null);
   const [mayaQrFile, setMayaQrFile] = useState<File | null>(null);
+  const [mayaLocalPreview, setMayaLocalPreview] = useState<string | null>(null);
 
   const [paypalEnabled, setPaypalEnabled] = useState(false);
+  const [paypalAccountName, setPaypalAccountName] = useState("");
   const [paypalEmail, setPaypalEmail] = useState("");
+
+  useEffect(() => {
+    if (!gcashQrFile) {
+      setGcashLocalPreview(null);
+      return;
+    }
+    const u = URL.createObjectURL(gcashQrFile);
+    setGcashLocalPreview(u);
+    return () => URL.revokeObjectURL(u);
+  }, [gcashQrFile]);
+
+  useEffect(() => {
+    if (!mayaQrFile) {
+      setMayaLocalPreview(null);
+      return;
+    }
+    const u = URL.createObjectURL(mayaQrFile);
+    setMayaLocalPreview(u);
+    return () => URL.revokeObjectURL(u);
+  }, [mayaQrFile]);
 
   const load = useCallback(async () => {
     setMsg(null);
@@ -64,7 +118,7 @@ export function PaymentAccountsPage() {
     const { data, error } = await supabase
       .from("businesses")
       .select(
-        "id,name,is_premium,pay_gcash_enabled,pay_gcash_qr_path,pay_gcash_account_name,pay_gcash_account_number,pay_maya_enabled,pay_maya_qr_path,pay_maya_account_name,pay_maya_account_number,pay_paypal_enabled,pay_paypal_email,pay_gcash_account_label,pay_maya_account_label",
+        "id,name,pay_gcash_enabled,pay_gcash_qr_path,pay_gcash_account_name,pay_gcash_account_number,pay_maya_enabled,pay_maya_qr_path,pay_maya_account_name,pay_maya_account_number,pay_paypal_enabled,pay_paypal_email,pay_paypal_account_name,pay_gcash_account_label,pay_maya_account_label",
       )
       .eq("owner_id", uid)
       .order("created_at", { ascending: true });
@@ -89,6 +143,12 @@ export function PaymentAccountsPage() {
     })();
   }, [load]);
 
+  useEffect(() => {
+    if (msg !== E_WALLET_SAVE_SUCCESS) return;
+    const t = window.setTimeout(() => setMsg(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [msg]);
+
   const selectedBiz = useMemo(() => rows.find((b) => b.id === selected) ?? null, [rows, selected]);
 
   useEffect(() => {
@@ -109,8 +169,28 @@ export function PaymentAccountsPage() {
     setMayaQrFile(null);
 
     setPaypalEnabled(Boolean(b.pay_paypal_enabled));
+    setPaypalAccountName((b.pay_paypal_account_name ?? "").trim());
     setPaypalEmail((b.pay_paypal_email ?? "").trim());
   }, [selectedBiz?.id]);
+
+  const pickQrFile = (file: File | null, which: "gcash" | "maya") => {
+    if (!file) {
+      if (which === "gcash") setGcashQrFile(null);
+      else setMayaQrFile(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setMsg("Please choose an image file (PNG or JPG).");
+      return;
+    }
+    if (file.size > MAX_QR_BYTES) {
+      setMsg("QR image must be 5MB or smaller.");
+      return;
+    }
+    setMsg(null);
+    if (which === "gcash") setGcashQrFile(file);
+    else setMayaQrFile(file);
+  };
 
   const uploadQrUnique = async (
     businessId: string,
@@ -131,7 +211,6 @@ export function PaymentAccountsPage() {
       return null;
     }
 
-    // Best-effort cleanup of previous QR to reduce clutter.
     if (existingPath && existingPath !== path) {
       await storage.remove([existingPath]);
     }
@@ -142,10 +221,6 @@ export function PaymentAccountsPage() {
   const save = async (e: FormEvent) => {
     e.preventDefault();
     if (!selectedBiz) return;
-    if (!selectedBiz.is_premium) {
-      setMsg("Upgrade this listing to Premium to accept paid reservations.");
-      return;
-    }
     setBusy(true);
     setMsg(null);
     try {
@@ -175,6 +250,7 @@ export function PaymentAccountsPage() {
         pay_maya_account_label: mayaEnabled ? mayaLabelLegacy.trim() || null : null,
         pay_maya_qr_path: mayaEnabled ? nextMayaPath : null,
         pay_paypal_enabled: paypalEnabled,
+        pay_paypal_account_name: paypalEnabled ? paypalAccountName.trim() || null : null,
         pay_paypal_email: paypalEnabled ? paypalEmail.trim() || null : null,
       };
 
@@ -183,39 +259,42 @@ export function PaymentAccountsPage() {
         setMsg(error.message);
         return;
       }
-      // refresh local state from DB
       await load();
-      setMsg("Saved.");
+      setMsg(E_WALLET_SAVE_SUCCESS);
     } finally {
       setBusy(false);
     }
   };
 
+  const gcashQrDisplay = gcashLocalPreview ?? publicQrUrl(gcashQrPath);
+  const mayaQrDisplay = mayaLocalPreview ?? publicQrUrl(mayaQrPath);
+
   if (!pageReady) return <ClientEditorSkeleton />;
 
   return (
-    <div className="page page--flush-top page-stack">
-      <div>
-        <h1 className="dash-title" style={{ marginBottom: 8 }}>
-          Reservation payment accounts
-        </h1>
-        <p className="dash-sub" style={{ maxWidth: 760, marginBottom: 0 }}>
-          Set your GCash/Maya/PayPal details and upload QR images. Travelers will see these during reservation on the
-          mobile app and submit payment proof for your review.
-        </p>
-      </div>
+    <div className="ewallet-page page page--flush-top">
+      <header className="ewallet-page__hero">
+        <h1 className="ewallet-page__title">E-Wallet Settings</h1>
+        <p className="ewallet-page__lead">Securely manage payment options you&apos;d like to receive.</p>
+      </header>
 
       {msg ? (
-        <div className={`alert-banner ${msg === "Saved." ? "alert-banner--success" : "alert-banner--error"}`}>{msg}</div>
+        <div
+          className={`alert-banner ${msg === E_WALLET_SAVE_SUCCESS ? "alert-banner--success" : "alert-banner--error"}`}
+          role={msg === E_WALLET_SAVE_SUCCESS ? "status" : "alert"}
+          aria-live="polite"
+        >
+          {msg}
+        </div>
       ) : null}
 
       {rows.length === 0 ? (
-        <div className="empty-state empty-state--compact">
+        <div className="empty-state empty-state--compact ewallet-page__empty">
           <div className="empty-state__icon" aria-hidden>
             💳
           </div>
           <p className="empty-state__title">Create a listing first</p>
-          <p className="empty-state__text">Add at least one listing, then come back to set up reservation payments.</p>
+          <p className="empty-state__text">Add at least one listing, then return here to set up e-wallets.</p>
           <div className="empty-state__actions">
             <Link to="/listings/new" className="btn btn-primary btn-inline">
               + Add listing
@@ -223,130 +302,295 @@ export function PaymentAccountsPage() {
           </div>
         </div>
       ) : (
-        <form className="card" onSubmit={(e) => void save(e)} style={{ maxWidth: 860 }}>
-          <div className="field">
-            <label htmlFor="biz">Business listing</label>
-            <select id="biz" value={selected} onChange={(e) => setSelected(e.target.value)}>
+        <form className="ewallet-card" onSubmit={(e) => void save(e)}>
+          <div className="ewallet-card__listing">
+            <label className="ewallet-card__listing-label" htmlFor="ewallet-biz">
+              Property
+            </label>
+            <select
+              id="ewallet-biz"
+              className="ewallet-card__listing-select"
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+            >
               {rows.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.name} {b.is_premium ? "(Premium)" : "(Free)"}
+                  {b.name}
                 </option>
               ))}
             </select>
-            {!selectedBiz?.is_premium ? (
-              <small className="form-footnote">
-                This listing is not Premium yet. Reservation payments are available only for Premium listings.
-              </small>
-            ) : null}
           </div>
 
-          <div className="field" style={{ marginTop: 6 }}>
-            <h3 className="card__title">GCash</h3>
-            <label className="acc-editor-avail" style={{ marginBottom: 10 }}>
-              <input type="checkbox" checked={gcashEnabled} onChange={(e) => setGcashEnabled(e.target.checked)} />
-              <span>Accept GCash</span>
-            </label>
-            {gcashEnabled ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-                <div>
-                  <label>Account name</label>
-                  <input value={gcashName} onChange={(e) => setGcashName(e.target.value)} placeholder="e.g. Juan D." />
+          <p className="ewallet-card__hint">
+            GCash, Maya, and PayPal are side by side. Turn on a toggle to enable editing and to show that method to
+            travelers in the app.
+          </p>
+
+          <div className="ewallet-columns">
+            {/* GCash column */}
+            <section className={`ewallet-col${gcashEnabled ? "" : " ewallet-col--off"}`} aria-labelledby="ewallet-col-gcash-title">
+              <div className="ewallet-col__dropdown" id="ewallet-col-gcash-title">
+                GCash
+                <span className="ewallet-brand__badge ewallet-col__badge">Most popular</span>
+              </div>
+              <div className="ewallet-col__head">
+                <div className="ewallet-brand">
+                  <span className="ewallet-brand__logo ewallet-brand__logo--gcash" aria-hidden>
+                    G
+                  </span>
                 </div>
-                <div>
-                  <label>Account number</label>
+                <div className="ewallet-panel__toggle ewallet-col__toggle">
+                  <span className="ewallet-panel__toggle-label">Accept payments</span>
+                  <ToggleSwitch checked={gcashEnabled} onChange={setGcashEnabled} id="sw-gcash" />
+                </div>
+              </div>
+
+              <div className="ewallet-col__body">
+                <div className="ewallet-field ewallet-field--full">
+                  <label htmlFor="gcash-name">Account name</label>
                   <input
+                    id="gcash-name"
+                    value={gcashName}
+                    onChange={(e) => setGcashName(e.target.value)}
+                    placeholder="e.g. Juan dela Cruz"
+                    autoComplete="off"
+                    disabled={!gcashEnabled}
+                  />
+                </div>
+                <div className="ewallet-field ewallet-field--full">
+                  <label htmlFor="gcash-no">Account number</label>
+                  <input
+                    id="gcash-no"
                     value={gcashNumber}
                     onChange={(e) => setGcashNumber(e.target.value)}
                     placeholder="e.g. 09xxxxxxxxx"
                     inputMode="numeric"
+                    autoComplete="off"
+                    disabled={!gcashEnabled}
                   />
                 </div>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label>QR image</label>
-                  <input type="file" accept="image/*" onChange={(e) => setGcashQrFile(e.target.files?.[0] ?? null)} />
-                  {gcashQrPath ? (
-                    <img
-                      src={publicQrUrl(gcashQrPath) ?? ""}
-                      alt="GCash QR"
-                      style={{ maxHeight: 160, marginTop: 10, borderRadius: 10, border: "1px solid var(--border)" }}
+
+                <div className={`ewallet-col__qr${!gcashEnabled ? " is-disabled" : ""}`}>
+                  <label className="ewallet-upload">
+                    <input
+                      ref={gcashInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="ewallet-upload__input"
+                      disabled={!gcashEnabled}
+                      onChange={(e) => pickQrFile(e.target.files?.[0] ?? null, "gcash")}
                     />
-                  ) : null}
+                    <span
+                      className="ewallet-upload__zone"
+                      onDragOver={(ev) => gcashEnabled && ev.preventDefault()}
+                      onDrop={(ev) => {
+                        if (!gcashEnabled) return;
+                        ev.preventDefault();
+                        pickQrFile(ev.dataTransfer.files?.[0] ?? null, "gcash");
+                      }}
+                      onClick={() => gcashEnabled && gcashInputRef.current?.click()}
+                      role="button"
+                      tabIndex={gcashEnabled ? 0 : -1}
+                      onKeyDown={(ev) => {
+                        if (!gcashEnabled) return;
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          gcashInputRef.current?.click();
+                        }
+                      }}
+                    >
+                      <span className="ewallet-upload__cloud" aria-hidden>
+                        ☁
+                      </span>
+                      <span className="ewallet-upload__title">Upload QR image</span>
+                      <span className="ewallet-upload__hint">PNG, JPG up to 5MB</span>
+                    </span>
+                  </label>
+                  <div className="ewallet-qr-preview ewallet-qr-preview--col">
+                    {gcashQrDisplay ? (
+                      <img src={gcashQrDisplay} alt="GCash QR preview" className="ewallet-qr-preview__img" />
+                    ) : (
+                      <div className="ewallet-qr-preview__ph">Preview</div>
+                    )}
+                  </div>
                 </div>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label>Legacy label (optional)</label>
+
+                <div className="ewallet-field ewallet-field--full">
+                  <label htmlFor="gcash-legacy">Legacy label (optional)</label>
                   <input
+                    id="gcash-legacy"
                     value={gcashLabelLegacy}
                     onChange={(e) => setGcashLabelLegacy(e.target.value)}
                     placeholder="09xx / Juan D."
+                    autoComplete="off"
+                    disabled={!gcashEnabled}
                   />
-                  <small className="form-footnote">Only needed for older app builds; safe to leave blank.</small>
+                  <small className="ewallet-field__hint">Older app versions.</small>
                 </div>
               </div>
-            ) : null}
-          </div>
+            </section>
 
-          <div className="field" style={{ marginTop: 12 }}>
-            <h3 className="card__title">Maya</h3>
-            <label className="acc-editor-avail" style={{ marginBottom: 10 }}>
-              <input type="checkbox" checked={mayaEnabled} onChange={(e) => setMayaEnabled(e.target.checked)} />
-              <span>Accept Maya</span>
-            </label>
-            {mayaEnabled ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-                <div>
-                  <label>Account name</label>
-                  <input value={mayaName} onChange={(e) => setMayaName(e.target.value)} placeholder="e.g. Juan D." />
+            {/* Maya column */}
+            <section className={`ewallet-col${mayaEnabled ? "" : " ewallet-col--off"}`} aria-labelledby="ewallet-col-maya-title">
+              <div className="ewallet-col__dropdown" id="ewallet-col-maya-title">
+                Maya
+              </div>
+              <div className="ewallet-col__head">
+                <div className="ewallet-brand">
+                  <span className="ewallet-brand__logo ewallet-brand__logo--maya" aria-hidden>
+                    M
+                  </span>
                 </div>
-                <div>
-                  <label>Account number</label>
+                <div className="ewallet-panel__toggle ewallet-col__toggle">
+                  <span className="ewallet-panel__toggle-label">Accept payments</span>
+                  <ToggleSwitch checked={mayaEnabled} onChange={setMayaEnabled} id="sw-maya" />
+                </div>
+              </div>
+
+              <div className="ewallet-col__body">
+                <div className="ewallet-field ewallet-field--full">
+                  <label htmlFor="maya-name">Account name</label>
                   <input
+                    id="maya-name"
+                    value={mayaName}
+                    onChange={(e) => setMayaName(e.target.value)}
+                    placeholder="e.g. Juan dela Cruz"
+                    autoComplete="off"
+                    disabled={!mayaEnabled}
+                  />
+                </div>
+                <div className="ewallet-field ewallet-field--full">
+                  <label htmlFor="maya-no">Account number</label>
+                  <input
+                    id="maya-no"
                     value={mayaNumber}
                     onChange={(e) => setMayaNumber(e.target.value)}
                     placeholder="e.g. 09xxxxxxxxx"
                     inputMode="numeric"
+                    autoComplete="off"
+                    disabled={!mayaEnabled}
                   />
                 </div>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label>QR image</label>
-                  <input type="file" accept="image/*" onChange={(e) => setMayaQrFile(e.target.files?.[0] ?? null)} />
-                  {mayaQrPath ? (
-                    <img
-                      src={publicQrUrl(mayaQrPath) ?? ""}
-                      alt="Maya QR"
-                      style={{ maxHeight: 160, marginTop: 10, borderRadius: 10, border: "1px solid var(--border)" }}
+
+                <div className={`ewallet-col__qr${!mayaEnabled ? " is-disabled" : ""}`}>
+                  <label className="ewallet-upload">
+                    <input
+                      ref={mayaInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="ewallet-upload__input"
+                      disabled={!mayaEnabled}
+                      onChange={(e) => pickQrFile(e.target.files?.[0] ?? null, "maya")}
                     />
-                  ) : null}
+                    <span
+                      className="ewallet-upload__zone"
+                      onDragOver={(ev) => mayaEnabled && ev.preventDefault()}
+                      onDrop={(ev) => {
+                        if (!mayaEnabled) return;
+                        ev.preventDefault();
+                        pickQrFile(ev.dataTransfer.files?.[0] ?? null, "maya");
+                      }}
+                      onClick={() => mayaEnabled && mayaInputRef.current?.click()}
+                      role="button"
+                      tabIndex={mayaEnabled ? 0 : -1}
+                      onKeyDown={(ev) => {
+                        if (!mayaEnabled) return;
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          mayaInputRef.current?.click();
+                        }
+                      }}
+                    >
+                      <span className="ewallet-upload__cloud" aria-hidden>
+                        ☁
+                      </span>
+                      <span className="ewallet-upload__title">Upload QR image</span>
+                      <span className="ewallet-upload__hint">PNG, JPG up to 5MB</span>
+                    </span>
+                  </label>
+                  <div className="ewallet-qr-preview ewallet-qr-preview--col">
+                    {mayaQrDisplay ? (
+                      <img src={mayaQrDisplay} alt="Maya QR preview" className="ewallet-qr-preview__img" />
+                    ) : (
+                      <div className="ewallet-qr-preview__ph">Preview</div>
+                    )}
+                  </div>
                 </div>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label>Legacy label (optional)</label>
-                  <input value={mayaLabelLegacy} onChange={(e) => setMayaLabelLegacy(e.target.value)} />
-                  <small className="form-footnote">Only needed for older app builds; safe to leave blank.</small>
+
+                <div className="ewallet-field ewallet-field--full">
+                  <label htmlFor="maya-legacy">Legacy label (optional)</label>
+                  <input
+                    id="maya-legacy"
+                    value={mayaLabelLegacy}
+                    onChange={(e) => setMayaLabelLegacy(e.target.value)}
+                    placeholder="09xx / Juan D."
+                    autoComplete="off"
+                    disabled={!mayaEnabled}
+                  />
+                  <small className="ewallet-field__hint">Older app versions.</small>
                 </div>
               </div>
-            ) : null}
+            </section>
+
+            {/* PayPal column */}
+            <section className={`ewallet-col${paypalEnabled ? "" : " ewallet-col--off"}`} aria-labelledby="ewallet-col-paypal-title">
+              <div className="ewallet-col__dropdown" id="ewallet-col-paypal-title">
+                PayPal
+              </div>
+              <div className="ewallet-col__head">
+                <div className="ewallet-brand">
+                  <span className="ewallet-brand__logo ewallet-brand__logo--paypal" aria-hidden>
+                    P
+                  </span>
+                </div>
+                <div className="ewallet-panel__toggle ewallet-col__toggle">
+                  <span className="ewallet-panel__toggle-label">Accept payments</span>
+                  <ToggleSwitch checked={paypalEnabled} onChange={setPaypalEnabled} id="sw-paypal" />
+                </div>
+              </div>
+
+              <div className="ewallet-col__body">
+                <div className="ewallet-field ewallet-field--full">
+                  <label htmlFor="paypal-name">Account name</label>
+                  <input
+                    id="paypal-name"
+                    value={paypalAccountName}
+                    onChange={(e) => setPaypalAccountName(e.target.value)}
+                    placeholder="e.g. Bluish Resort"
+                    autoComplete="off"
+                    disabled={!paypalEnabled}
+                  />
+                </div>
+                <div className="ewallet-field ewallet-field--full">
+                  <label htmlFor="paypal-email">PayPal email or PayPal.me</label>
+                  <input
+                    id="paypal-email"
+                    value={paypalEmail}
+                    onChange={(e) => setPaypalEmail(e.target.value)}
+                    placeholder="you@email.com or paypal.me/yourname"
+                    autoComplete="off"
+                    disabled={!paypalEnabled}
+                  />
+                </div>
+
+                <div className="ewallet-col__qr ewallet-col__qr--paypal-static">
+                  <div className="ewallet-paypal-qr-placeholder" aria-hidden>
+                    <span className="ewallet-paypal-qr-placeholder__label">QR image</span>
+                    <span className="ewallet-paypal-qr-placeholder__text">
+                      PayPal does not use a guest-scanned QR here. Travelers pay using the email or link above.
+                    </span>
+                  </div>
+                  <div className="ewallet-qr-preview ewallet-qr-preview--col ewallet-qr-preview--na">
+                    <div className="ewallet-qr-preview__ph">Not applicable</div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
 
-          <div className="field" style={{ marginTop: 12 }}>
-            <h3 className="card__title">PayPal</h3>
-            <label className="acc-editor-avail" style={{ marginBottom: 10 }}>
-              <input type="checkbox" checked={paypalEnabled} onChange={(e) => setPaypalEnabled(e.target.checked)} />
-              <span>Accept PayPal</span>
-            </label>
-            {paypalEnabled ? (
-              <>
-                <label>Email or PayPal.me</label>
-                <input
-                  value={paypalEmail}
-                  onChange={(e) => setPaypalEmail(e.target.value)}
-                  placeholder="you@email.com or paypal.me/yourname"
-                />
-              </>
-            ) : null}
-          </div>
-
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
-            <button className="btn btn-primary btn-inline" type="submit" disabled={busy || !selectedBiz?.is_premium}>
-              {busy ? "Saving…" : "Save"}
+          <div className="ewallet-card__footer">
+            <button className="btn btn-primary ewallet-card__save" type="submit" disabled={busy}>
+              {busy ? "Saving…" : "Save changes"}
             </button>
           </div>
         </form>
@@ -354,4 +598,3 @@ export function PaymentAccountsPage() {
     </div>
   );
 }
-

@@ -16,11 +16,20 @@ export type ItineraryStop = {
   longitude: number;
   categoryName?: string;
   photoUrl?: string | null;
+  // Optional computed costs for generated itineraries (mainly Resorts).
+  estimatedTotalPesos?: number | null;
+  estimatedEntrancePesos?: number | null;
+  estimatedAccommodationPesos?: number | null;
+  estimatedAccommodationName?: string | null;
+  estimatedAccommodationPax?: string | null;
+  estimatedGroupSize?: number | null;
+  estimatedPerPersonPesos?: number | null;
 };
 
 type Ctx = {
   stops: ItineraryStop[];
   addStop: (stop: ItineraryStop) => void;
+  setStops: (stops: ItineraryStop[]) => void;
   removeStop: (id: string) => void;
   clear: () => void;
 };
@@ -53,6 +62,11 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const setStopsList = useCallback((next: ItineraryStop[]) => {
+    setStops(next);
+    void AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  }, []);
+
   const removeStop = useCallback((id: string) => {
     setStops((prev) => {
       const next = prev.filter((s) => s.id !== id);
@@ -67,8 +81,8 @@ export function ItineraryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ stops, addStop, removeStop, clear }),
-    [stops, addStop, removeStop, clear],
+    () => ({ stops, addStop, setStops: setStopsList, removeStop, clear }),
+    [stops, addStop, setStopsList, removeStop, clear],
   );
 
   return (

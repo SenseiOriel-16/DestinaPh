@@ -36,7 +36,7 @@ export function AuthSplitLayout({ children, variant, formScrollClassName }: Prop
               <ul className="auth-split__bullets">
                 <li>Manage one or many business listings from a single account</li>
                 <li>Track views and interest with built-in analytics</li>
-                <li>Upgrade to premium when you&apos;re ready for more tools</li>
+                <li>Handle traveler reservations and messages in one place</li>
               </ul>
             </>
           ) : (
@@ -50,7 +50,7 @@ export function AuthSplitLayout({ children, variant, formScrollClassName }: Prop
               <ul className="auth-split__bullets">
                 <li>Owner approvals, suspensions, and safety</li>
                 <li>Categories, municipalities, and featured content</li>
-                <li>Premium payments and subscription oversight</li>
+                <li>Reports and marketplace health at a glance</li>
               </ul>
             </>
           )}

@@ -31,10 +31,14 @@ type Row = {
   id: string;
   name: string;
   description: string | null;
+  tags?: string[] | null;
   status: string;
   address_line: string | null;
   rating_average?: number | null;
   rating_count?: number | null;
+  estimated_cost_min_pesos?: number | null;
+  estimated_cost_max_pesos?: number | null;
+  best_visit_times?: string[] | null;
   categories: { slug: string; name: string } | null;
   municipalities: { id: string; name: string } | null;
   provinces: { name: string } | null;
@@ -83,7 +87,7 @@ export function ExploreScreen({ navigation, route }: Props) {
     const { data, error } = await supabase
       .from("businesses")
       .select(
-        "id,name,description,status,address_line,rating_average,rating_count,categories(slug,name),municipalities(id,name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
+        "id,name,description,tags,status,address_line,rating_average,rating_count,estimated_cost_min_pesos,estimated_cost_max_pesos,best_visit_times,categories(slug,name),municipalities(id,name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
       )
       .eq("status", "approved")
       .order("sort_order", { ascending: true, foreignTable: "business_photos" });
@@ -118,12 +122,14 @@ export function ExploreScreen({ navigation, route }: Props) {
     return rows.filter((r) => {
       const catOk = category === "all" ? true : (r.categories?.slug ?? "") === category;
       const munOk = municipality === "all" ? true : (r.municipalities?.id ?? "") === municipality;
+      const tags = Array.isArray(r.tags) ? r.tags : [];
+      const tagsOk = !q || tags.some((t) => (t ?? "").toLowerCase().includes(q));
       const textOk =
         !q ||
         r.name.toLowerCase().includes(q) ||
         (r.description ?? "").toLowerCase().includes(q) ||
         (r.municipalities?.name ?? "").toLowerCase().includes(q);
-      return catOk && munOk && textOk;
+      return catOk && munOk && (textOk || tagsOk);
     });
   }, [rows, category, municipality, search]);
 
@@ -205,6 +211,12 @@ export function ExploreScreen({ navigation, route }: Props) {
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         renderItem={({ item }) => {
           const photoUri = firstPhotoPublicUrl(item.business_photos);
+          const cmin = item.estimated_cost_min_pesos;
+          const cmax = item.estimated_cost_max_pesos;
+          const costLine =
+            typeof cmin === "number" && typeof cmax === "number" && cmin >= 0 && cmax >= cmin
+              ? `₱${cmin.toLocaleString("en-PH")}–₱${cmax.toLocaleString("en-PH")} / person`
+              : null;
           return (
           <Pressable
             style={styles.card}
@@ -228,6 +240,7 @@ export function ExploreScreen({ navigation, route }: Props) {
               <Text style={styles.cardMeta} numberOfLines={2}>
                 {formatBusinessAddress(item)}
               </Text>
+              {costLine ? <Text style={styles.costLine}>{costLine}</Text> : null}
               <Text style={styles.rating}>
                 <Ionicons name="star" size={14} color={colors.star} />{" "}
                 <Text style={styles.ratingStrong}>{formatRatingPill(item.rating_average, item.rating_count)}</Text>
@@ -395,6 +408,7 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 2,
   },
+  costLine: { marginTop: 6, fontSize: 13, fontWeight: "700", color: colors.navy },
   rating: {
     marginTop: 8,
     fontSize: 13,

@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -7,22 +7,25 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
+import { FlashNotice } from "../components/FlashNotice";
+import { PasswordField } from "../components/PasswordField";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Settings">;
 
-export function SettingsScreen({ navigation }: Props) {
+export function SettingsScreen(_props: Props) {
   const insets = useSafeAreaInsets();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+  const clearFlash = useCallback(() => setFlash(null), []);
 
   const changePassword = async () => {
     const email = (await supabase.auth.getSession()).data.session?.user?.email;
@@ -60,9 +63,7 @@ export function SettingsScreen({ navigation }: Props) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      Alert.alert("Settings", "Your password has been updated.", [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ]);
+      setFlash("Password updated successfully.");
     } finally {
       setBusy(false);
     }
@@ -74,6 +75,7 @@ export function SettingsScreen({ navigation }: Props) {
       contentContainerStyle={{ paddingBottom: 32 + insets.bottom, paddingTop: 12 }}
       keyboardShouldPersistTaps="handled"
     >
+      <FlashNotice message={flash} variant="success" onDismiss={clearFlash} />
       <View style={styles.card}>
         <Text style={styles.h1}>Change password</Text>
         <Text style={styles.lead}>
@@ -81,39 +83,33 @@ export function SettingsScreen({ navigation }: Props) {
         </Text>
 
         <Text style={styles.label}>Current password</Text>
-        <TextInput
-          style={styles.input}
-          secureTextEntry
+        <PasswordField
           autoCapitalize="none"
           editable={!busy}
           value={currentPassword}
           onChangeText={setCurrentPassword}
-          placeholder="••••••••"
-          placeholderTextColor={colors.muted2}
+          placeholder="Enter current password"
+          textContentType="password"
         />
 
         <Text style={[styles.label, styles.labelSp]}>New password</Text>
-        <TextInput
-          style={styles.input}
-          secureTextEntry
+        <PasswordField
           autoCapitalize="none"
           editable={!busy}
           value={newPassword}
           onChangeText={setNewPassword}
-          placeholder="Bagong password (min. 6)"
-          placeholderTextColor={colors.muted2}
+          placeholder="New password (min. 6 characters)"
+          textContentType="newPassword"
         />
 
         <Text style={[styles.label, styles.labelSp]}>Confirm new password</Text>
-        <TextInput
-          style={styles.input}
-          secureTextEntry
+        <PasswordField
           autoCapitalize="none"
           editable={!busy}
           value={confirmPassword}
           onChangeText={setConfirmPassword}
-          placeholder="Ulitin ang bagong password"
-          placeholderTextColor={colors.muted2}
+          placeholder="Re-enter new password"
+          textContentType="newPassword"
         />
 
         <Pressable
@@ -182,17 +178,6 @@ const styles = StyleSheet.create({
   },
   labelSp: {
     marginTop: 12,
-  },
-  input: {
-    marginTop: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 15,
-    backgroundColor: colors.white,
-    color: colors.text,
   },
   primary: {
     marginTop: 22,
