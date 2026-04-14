@@ -32,7 +32,10 @@ export function OwnerReservationsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [proofUrls, setProofUrls] = useState<Record<string, string>>({});
+  const [proofState, setProofState] = useState<Record<string, "idle" | "loading" | "ready" | "missing">>({});
+  const [proofModal, setProofModal] = useState<{ open: boolean; url: string; title: string } | null>(null);
   const [filter, setFilter] = useState<"all" | "needs_review" | "confirmed" | "cancelled">("needs_review");
   const [readIds, setReadIds] = useState<Set<string>>(() => {
     try {
@@ -55,18 +58,24 @@ export function OwnerReservationsPage() {
 
   const load = useCallback(async () => {
     setMsg(null);
+    setLoading(true);
     const { data: auth } = await supabase.auth.getUser();
     const uid = auth.user?.id;
-    if (!uid) return;
+    if (!uid) {
+      setLoading(false);
+      return;
+    }
     const { data: myBiz, error: bizErr } = await supabase.from("businesses").select("id").eq("owner_id", uid);
     if (bizErr) {
       setMsg(bizErr.message);
+      setLoading(false);
       return;
     }
     const bizIds = (myBiz ?? []).map((b: { id: string }) => b.id);
     if (bizIds.length === 0) {
       setRows([]);
       setProofUrls({});
+      setLoading(false);
       return;
     }
     const { data, error } = await supabase
@@ -78,18 +87,16 @@ export function OwnerReservationsPage() {
       .order("requested_at", { ascending: false });
     if (error) {
       setMsg(error.message);
+      setLoading(false);
       return;
     }
     const list = (data as unknown as Row[]) ?? [];
     setRows(list);
-    const next: Record<string, string> = {};
-    for (const r of list) {
-      const p = r.payment_proof_storage_path;
-      if (!p) continue;
-      const { data: signed } = await supabase.storage.from("booking-payment-proofs").createSignedUrl(p, 3600);
-      if (signed?.signedUrl) next[r.id] = signed.signedUrl;
-    }
-    setProofUrls(next);
+    // Proof URLs are generated on demand (click) to avoid noisy 400s
+    // when legacy rows point to missing objects.
+    setProofUrls({});
+    setProofState({});
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -146,6 +153,20 @@ export function OwnerReservationsPage() {
     if (status === "cancelled" && !confirm("Reject this reservation?")) return;
     setBusyId(id);
     setMsg(null);
+
+    // Safety: don't allow confirming a booking if the proof object is missing.
+    if (status === "confirmed") {
+      const row = rows.find((r) => r.id === id);
+      if (row?.payment_proof_storage_path) {
+        const url = await ensureProofUrl(row);
+        if (!url) {
+          setBusyId(null);
+          setMsg("Payment proof not found. Ask the traveler to re-upload their proof before confirming.");
+          return;
+        }
+      }
+    }
+
     const { error } = await supabase.from("bookings").update({ status }).eq("id", id);
     setBusyId(null);
     if (error) {
@@ -155,8 +176,91 @@ export function OwnerReservationsPage() {
     await load();
   };
 
+  const ensureProofUrl = async (r: Row, opts?: { silent?: boolean }): Promise<string | null> => {
+    const p = (r.payment_proof_storage_path ?? "").trim();
+    if (!p) return null;
+
+    // Backward-compatible: some older rows may have stored a full URL instead of a storage path.
+    if (p.startsWith("http://") || p.startsWith("https://")) {
+      setProofState((prev) => ({ ...prev, [r.id]: "ready" }));
+      setProofUrls((prev) => ({ ...prev, [r.id]: p }));
+      return p;
+    }
+
+    if (proofUrls[r.id]) return proofUrls[r.id];
+    if (proofState[r.id] === "loading" || proofState[r.id] === "missing") return null;
+    setProofState((prev) => ({ ...prev, [r.id]: "loading" }));
+
+    const { data: signed, error: signErr } = await supabase.storage
+      .from("booking-payment-proofs")
+      .createSignedUrl(p, 3600);
+    if (signErr || !signed?.signedUrl) {
+      // Supabase Storage returns "Object not found" for missing objects (and sometimes for denied access).
+      // Treat it as missing and avoid retry spam.
+      setProofState((prev) => ({ ...prev, [r.id]: "missing" }));
+      if (!opts?.silent) setMsg(signErr?.message ?? "Could not open payment proof.");
+      return null;
+    }
+
+    setProofUrls((prev) => ({ ...prev, [r.id]: signed.signedUrl }));
+    setProofState((prev) => ({ ...prev, [r.id]: "ready" }));
+    return signed.signedUrl;
+  };
+
+  const openProof = async (r: Row) => {
+    const url = await ensureProofUrl(r);
+    if (!url) return;
+    const title = `${r.businesses?.name ?? "Reservation"} · ${r.payment_method?.toUpperCase?.() ?? "Payment proof"}`;
+    setProofModal({ open: true, url, title });
+  };
+
+  useEffect(() => {
+    if (!proofModal?.open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setProofModal(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [proofModal?.open]);
+
+  // Prefetch proof previews for visible rows (avoids extra clicks).
+  useEffect(() => {
+    const list = filtered.filter((r) => Boolean(r.payment_proof_storage_path));
+    if (!list.length) return;
+    const toFetch = list
+      .filter((r) => !proofUrls[r.id] && proofState[r.id] !== "loading" && proofState[r.id] !== "missing")
+      .slice(0, 12);
+    if (!toFetch.length) return;
+    void Promise.all(toFetch.map((r) => ensureProofUrl(r, { silent: true })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, filtered.length]);
+
   return (
     <div className="page page--wide owner-reservations">
+      {proofModal?.open ? (
+        <div
+          className="proof-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Payment proof preview"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setProofModal(null);
+          }}
+        >
+          <div className="proof-modal__panel">
+            <div className="proof-modal__header">
+              <div className="proof-modal__title">{proofModal.title}</div>
+              <button type="button" className="proof-modal__close" onClick={() => setProofModal(null)}>
+                Close
+              </button>
+            </div>
+            <a className="proof-modal__imageWrap" href={proofModal.url} target="_blank" rel="noreferrer" title="Open original">
+              <img className="proof-modal__img" src={proofModal.url} alt="Payment proof" />
+            </a>
+            <div className="proof-modal__hint">Tip: click image to open original in new tab.</div>
+          </div>
+        </div>
+      ) : null}
       <header className="owner-reservations__hero">
         <div className="owner-reservations__hero-text">
           <p className="owner-reservations__eyebrow">Bookings</p>
@@ -188,7 +292,13 @@ export function OwnerReservationsPage() {
 
       {msg && <div className="alert-banner alert-banner--error">{msg}</div>}
 
-      {rows.length === 0 ? (
+      {loading ? (
+        <div className="owner-reservations-loading">
+          <div className="owner-reservations-loading__card" />
+          <div className="owner-reservations-loading__row" />
+          <div className="owner-reservations-loading__row" />
+        </div>
+      ) : rows.length === 0 ? (
         <div className="owner-reservations-empty">
           <div className="owner-reservations-empty__icon" aria-hidden>
             {"\u{1F4C5}"}
@@ -296,22 +406,47 @@ export function OwnerReservationsPage() {
                     )}
                   </td>
                   <td>
-                    {proofUrls[r.id] ? (
-                      <a
-                        className="owner-reservations__proof-link"
-                        href={proofUrls[r.id]}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={() => {
-                          if (!needsHostAction(r.status)) return;
-                          if (readIds.has(r.id)) return;
-                          const next = new Set(readIds);
-                          next.add(r.id);
-                          persistReadIds(next);
-                        }}
-                      >
-                        View proof
-                      </a>
+                    {r.payment_proof_storage_path ? (
+                      <div className="owner-reservations__proof">
+                        {proofUrls[r.id] ? (
+                          <a
+                            className="owner-reservations__proof-thumb"
+                            href={proofUrls[r.id]}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Open proof"
+                            onClick={() => {
+                              if (needsHostAction(r.status) && !readIds.has(r.id)) {
+                                const next = new Set(readIds);
+                                next.add(r.id);
+                                persistReadIds(next);
+                              }
+                            }}
+                          >
+                            <img src={proofUrls[r.id]} alt="Payment proof" />
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`owner-reservations__proof-thumb owner-reservations__proof-thumb--ph${proofState[r.id] === "missing" ? " is-missing" : ""}`}
+                            disabled={proofState[r.id] === "missing"}
+                            title={proofState[r.id] === "missing" ? "Proof missing" : "Load preview"}
+                            onClick={() => {
+                              if (needsHostAction(r.status) && !readIds.has(r.id)) {
+                                const next = new Set(readIds);
+                                next.add(r.id);
+                                persistReadIds(next);
+                              }
+                              void openProof(r);
+                            }}
+                          >
+                            {proofState[r.id] === "missing" ? "Missing" : "Preview"}
+                          </button>
+                        )}
+                        {proofState[r.id] === "loading" ? (
+                          <span className="owner-reservations__cell-note">Loading…</span>
+                        ) : null}
+                      </div>
                     ) : (
                       <span className="owner-reservations__cell-note">—</span>
                     )}

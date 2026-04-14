@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,14 +13,17 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type { RootStackParamList } from "../../App";
+import type { BookingsStackParamList, ExploreStackParamList, HomeStackParamList } from "../navigation/tabTypes";
 import { type AccommodationItem, normalizeAccommodations } from "../lib/accommodations";
 import { type LocalImage, uploadBookingPaymentProof } from "../lib/uploadBookingProof";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 import { GlassPanel } from "../ui/GlassPanel";
 
-type Props = NativeStackScreenProps<RootStackParamList, "BookingRequest">;
+type AnyBookingRequestProps =
+  | NativeStackScreenProps<HomeStackParamList, "BookingRequest">
+  | NativeStackScreenProps<ExploreStackParamList, "BookingRequest">
+  | NativeStackScreenProps<BookingsStackParamList, "BookingRequest">;
 
 type PayMethod = "gcash" | "maya" | "paypal";
 type TripPeriod = "day" | "night";
@@ -85,7 +89,7 @@ function normalizeArrivalTime(input: string): string | null {
   return null;
 }
 
-export function BookingRequestScreen({ route, navigation }: Props) {
+export function BookingRequestScreen({ route, navigation }: AnyBookingRequestProps) {
   const { businessId } = route.params;
   const [placeName, setPlaceName] = useState("");
   const [accommodations, setAccommodations] = useState<AccommodationItem[]>([]);
@@ -107,6 +111,7 @@ export function BookingRequestScreen({ route, navigation }: Props) {
   const [mayaLabel, setMayaLabel] = useState("");
   const [paypalEmail, setPaypalEmail] = useState("");
   const [selectedAccIndex, setSelectedAccIndex] = useState<number | null>(null);
+  const [accPickerOpen, setAccPickerOpen] = useState(false);
   const [fullName, setFullName] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [checkIn, setCheckIn] = useState("");
@@ -121,6 +126,8 @@ export function BookingRequestScreen({ route, navigation }: Props) {
   const [loadingBiz, setLoadingBiz] = useState(true);
   const [sending, setSending] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<string | null>(null);
+  const [doneModalOpen, setDoneModalOpen] = useState(false);
+  const [doneBookingId, setDoneBookingId] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -185,6 +192,11 @@ export function BookingRequestScreen({ route, navigation }: Props) {
     () => accommodations.map((a, i) => ({ a, i })).filter(({ a }) => a.available !== false && a.name.trim()),
     [accommodations],
   );
+  const selectedAccName = useMemo(() => {
+    if (selectedAccIndex == null) return "";
+    const a = accommodations[selectedAccIndex];
+    return a?.name?.trim?.() ? a.name.trim() : "";
+  }, [selectedAccIndex, accommodations]);
 
   const nights = useMemo(() => nightsBetween(checkIn.trim(), checkOut.trim()), [checkIn, checkOut]);
   const pricePerNight =
@@ -336,15 +348,39 @@ export function BookingRequestScreen({ route, navigation }: Props) {
       });
 
       if (error) {
-        setSubmitMsg(error.message);
+        const anyErr = error as any;
+        const msgParts = [
+          anyErr?.message,
+          anyErr?.details ? `Details: ${anyErr.details}` : null,
+          anyErr?.hint ? `Hint: ${anyErr.hint}` : null,
+        ].filter(Boolean);
+        setSubmitMsg(msgParts.length ? msgParts.join("\n") : "Booking failed. Please try again.");
         return;
       }
 
-      Alert.alert("Submitted", "Your reservation was sent. The property will review and confirm.", [
-        { text: "OK", onPress: () => navigation.goBack() },
-      ]);
+      setDoneBookingId(bookingId);
+      setDoneModalOpen(true);
     } finally {
       setSending(false);
+    }
+  };
+
+  const goToBookings = () => {
+    // Try to navigate to the parent tab route first (works when this screen is inside Home/Explore stacks).
+    const parent: any = (navigation as any).getParent?.();
+    try {
+      if (parent?.navigate) {
+        parent.navigate("Bookings", { screen: "BookingsMain" });
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    // Fallback: if we're already inside the Bookings stack.
+    try {
+      (navigation as any).navigate("BookingsMain");
+    } catch {
+      navigation.goBack();
     }
   };
 
@@ -358,6 +394,41 @@ export function BookingRequestScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.shell}>
+      <Modal visible={doneModalOpen} transparent animationType="fade" onRequestClose={() => setDoneModalOpen(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setDoneModalOpen(false)} />
+        <View style={styles.doneWrap} pointerEvents="box-none">
+          <GlassPanel style={styles.doneCard} contentStyle={styles.doneInner} borderRadius={24} intensity={70}>
+            <View style={styles.doneIcon}>
+              <Ionicons name="checkmark-circle" size={44} color={colors.primaryTeal} />
+            </View>
+            <Text style={styles.doneTitle}>Reservation submitted</Text>
+            <Text style={styles.doneText}>
+              Done na ang reservation mo. Mag-antay lang ng confirmation ng owner.
+            </Text>
+            <View style={styles.doneBtns}>
+              <Pressable
+                style={({ pressed }) => [styles.doneBtnPrimary, pressed && { opacity: 0.92 }]}
+                onPress={() => {
+                  setDoneModalOpen(false);
+                  goToBookings();
+                }}
+              >
+                <Text style={styles.doneBtnPrimaryTxt}>View status</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.doneBtnGhost, pressed && { opacity: 0.92 }]}
+                onPress={() => {
+                  setDoneModalOpen(false);
+                  // Keep a sensible back behavior after closing.
+                  if (doneBookingId) navigation.goBack();
+                }}
+              >
+                <Text style={styles.doneBtnGhostTxt}>Close</Text>
+              </Pressable>
+            </View>
+          </GlassPanel>
+        </View>
+      </Modal>
       <ScrollView style={styles.page} contentContainerStyle={{ padding: 16, paddingBottom: 220 }} showsVerticalScrollIndicator={false}>
         <GlassPanel style={styles.headerCard} contentStyle={styles.headerCardInner} borderRadius={24} intensity={62}>
           <Text style={styles.title}>Reserve your stay</Text>
@@ -400,30 +471,75 @@ export function BookingRequestScreen({ route, navigation }: Props) {
             <Ionicons name="bed-outline" size={20} color={colors.navy} />
             <Text style={styles.sectionTitle}>Accommodation</Text>
           </View>
-          {availableAccs.map(({ a, i }) => (
-            <Pressable
-              key={`${a.name}-${i}`}
-              style={[styles.choice, selectedAccIndex === i && styles.choiceOn]}
-              onPress={() => setSelectedAccIndex(i)}
-            >
-              <View style={styles.choiceRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.choiceTitle}>{a.name}</Text>
-                  <Text style={styles.choiceMeta}>
-                    {a.pax ? `${a.pax} · ` : ""}
-                    {a.price_pesos > 0
-                      ? `\u20B1${a.price_pesos.toLocaleString("en-PH")}/night`
-                      : "Price on request"}
-                  </Text>
+          <Text style={styles.label}>Select accommodation</Text>
+          <Pressable
+            style={({ pressed }) => [styles.dropdownBtn, pressed && { opacity: 0.95 }]}
+            onPress={() => setAccPickerOpen(true)}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dropdownValue} numberOfLines={1}>
+                {selectedAccIndex != null && selectedAccName ? selectedAccName : "Tap to choose"}
+              </Text>
+              {selectedAccIndex != null && accommodations[selectedAccIndex]?.price_pesos ? (
+                <Text style={styles.dropdownHint} numberOfLines={1}>
+                  {`\u20B1${Number(accommodations[selectedAccIndex].price_pesos).toLocaleString("en-PH")}/night`}
+                </Text>
+              ) : (
+                <Text style={styles.dropdownHint} numberOfLines={1}>
+                  Choose from available rooms
+                </Text>
+              )}
+            </View>
+            <Ionicons name="chevron-down" size={20} color={colors.navy} />
+          </Pressable>
+
+          <Modal
+            visible={accPickerOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setAccPickerOpen(false)}
+          >
+            <Pressable style={styles.modalOverlay} onPress={() => setAccPickerOpen(false)} />
+            <View style={styles.modalSheetWrap} pointerEvents="box-none">
+              <GlassPanel style={styles.modalSheet} contentStyle={styles.modalSheetInner} borderRadius={22} intensity={66}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Choose accommodation</Text>
+                  <Pressable style={styles.modalClose} onPress={() => setAccPickerOpen(false)}>
+                    <Ionicons name="close" size={22} color={colors.navy} />
+                  </Pressable>
                 </View>
-                <Ionicons
-                  name={selectedAccIndex === i ? "checkmark-circle" : "ellipse-outline"}
-                  size={22}
-                  color={selectedAccIndex === i ? colors.primaryTeal : colors.muted2}
-                />
-              </View>
-            </Pressable>
-          ))}
+                <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+                  {availableAccs.map(({ a, i }) => (
+                    <Pressable
+                      key={`${a.name}-${i}`}
+                      style={[styles.choice, selectedAccIndex === i && styles.choiceOn]}
+                      onPress={() => {
+                        setSelectedAccIndex(i);
+                        setAccPickerOpen(false);
+                      }}
+                    >
+                      <View style={styles.choiceRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.choiceTitle}>{a.name}</Text>
+                          <Text style={styles.choiceMeta}>
+                            {a.pax ? `${a.pax} · ` : ""}
+                            {a.price_pesos > 0
+                              ? `\u20B1${a.price_pesos.toLocaleString("en-PH")}/night`
+                              : "Price on request"}
+                          </Text>
+                        </View>
+                        <Ionicons
+                          name={selectedAccIndex === i ? "checkmark-circle" : "ellipse-outline"}
+                          size={22}
+                          color={selectedAccIndex === i ? colors.primaryTeal : colors.muted2}
+                        />
+                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </GlassPanel>
+            </View>
+          </Modal>
         </GlassPanel>
       ) : (
         <Text style={styles.warn}>No accommodation types listed — select dates and guests only.</Text>
@@ -746,6 +862,75 @@ const styles = StyleSheet.create({
   choiceRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   choiceTitle: { fontSize: 15, fontWeight: "700", color: colors.navy },
   choiceMeta: { fontSize: 13, color: colors.muted, marginTop: 4 },
+  dropdownBtn: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.64)",
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  dropdownValue: { fontSize: 15, fontWeight: "800", color: colors.navy },
+  dropdownHint: { marginTop: 3, fontSize: 12.5, color: colors.muted },
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  modalSheetWrap: {
+    flex: 1,
+    justifyContent: "flex-end",
+    padding: 16,
+  },
+  modalSheet: { width: "100%" },
+  modalSheetInner: { padding: 14 },
+  modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  modalTitle: { fontSize: 16, fontWeight: "900", color: colors.navy },
+  modalClose: { padding: 6, borderRadius: 999 },
+  doneWrap: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 18,
+  },
+  doneCard: {
+    width: "100%",
+  },
+  doneInner: {
+    padding: 16,
+  },
+  doneIcon: {
+    alignSelf: "center",
+    width: 66,
+    height: 66,
+    borderRadius: 22,
+    backgroundColor: "rgba(11,184,196,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(11,184,196,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  doneTitle: { fontSize: 18, fontWeight: "900", color: colors.navy, textAlign: "center" },
+  doneText: { marginTop: 6, fontSize: 13.5, color: colors.muted, lineHeight: 19, textAlign: "center" },
+  doneBtns: { marginTop: 14, gap: 10 },
+  doneBtnPrimary: {
+    backgroundColor: colors.primaryTeal,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  doneBtnPrimaryTxt: { color: "#fff", fontWeight: "900", fontSize: 15 },
+  doneBtnGhost: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.62)",
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  doneBtnGhostTxt: { color: colors.navy, fontWeight: "900", fontSize: 14 },
   summaryLine: { fontSize: 13, color: colors.text, lineHeight: 18 },
   totalRow: { marginTop: 10, flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
   summaryTotalLbl: { fontSize: 13, fontWeight: "800", color: colors.muted2 },

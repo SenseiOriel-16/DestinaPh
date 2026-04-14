@@ -9,7 +9,6 @@ import { InterestSelectScreen } from "./src/screens/InterestSelectScreen";
 import { MainTabs, type TabParamList } from "./src/navigation/MainTabs";
 import { navyStackHeader } from "./src/navigation/stackScreenOptions";
 import { DestinationMapScreen } from "./src/screens/DestinationMapScreen";
-import { BookingRequestScreen } from "./src/screens/BookingRequestScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { HelpSupportScreen } from "./src/screens/HelpSupportScreen";
 import { AboutDestinaPHScreen } from "./src/screens/AboutDestinaPHScreen";
@@ -25,7 +24,6 @@ export type RootStackParamList = {
   InterestSelect: { intent?: "onboarding" | "edit" } | undefined;
   Main: NavigatorScreenParams<TabParamList> | undefined;
   DestinationMap: { title: string; destLat: number; destLng: number };
-  BookingRequest: { businessId: string };
   Settings: undefined;
   HelpSupport: undefined;
   AboutDestinaPH: undefined;
@@ -66,17 +64,6 @@ export default function App() {
             options={{
               headerShown: false,
               animation: "slide_from_right",
-            }}
-          />
-          <Stack.Screen
-            name="BookingRequest"
-            component={BookingRequestScreen}
-            options={{
-              headerShown: true,
-              headerStyle: { backgroundColor: colors.navy },
-              headerTintColor: "#fff",
-              headerTitleStyle: { fontWeight: "700" },
-              title: "Reserve",
             }}
           />
           <Stack.Screen name="Settings" component={SettingsScreen} options={{ ...navyStackHeader, title: "Settings" }} />

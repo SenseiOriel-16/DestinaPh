@@ -3,16 +3,19 @@ import type { NavigatorScreenParams } from "@react-navigation/native";
 export type HomeStackParamList = {
   HomeMain: undefined;
   Detail: { id: string };
+  BookingRequest: { businessId: string };
 };
 
 export type ExploreStackParamList = {
   ExploreMain: { categorySlug?: string } | undefined;
   Detail: { id: string };
+  BookingRequest: { businessId: string };
 };
 
 export type BookingsStackParamList = {
   BookingsMain: undefined;
   Detail: { id: string };
+  BookingRequest: { businessId: string };
 };
 
 export type TabParamList = {
