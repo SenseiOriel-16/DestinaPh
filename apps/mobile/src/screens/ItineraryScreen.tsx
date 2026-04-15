@@ -22,6 +22,8 @@ import { colors } from "../theme/colors";
 import * as Location from "expo-location";
 import { supabase } from "../lib/supabase";
 import { firstPhotoPublicUrl } from "../lib/businessDisplay";
+import { ratingParts } from "../lib/businessRatingDisplay";
+import { haversineKm } from "../lib/geo";
 import {
   rankCandidates,
   type BizCandidate,
@@ -179,21 +181,23 @@ function IconChip({
   );
 }
 
-export function ItineraryScreen() {
+export function ItineraryScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { stops, setStops } = useItinerary();
   const [view, setView] = useState<"form" | "loading" | "results">("form");
   const [municipalities, setMunicipalities] = useState<{ id: string; name: string }[]>([]);
   const [municipalityId, setMunicipalityId] = useState<string>("");
   const [categorySlug, setCategorySlug] = useState<string>("resorts-leisure");
+  const [natureSubcategory, setNatureSubcategory] = useState<"all" | "waterfalls-swimming" | "camping-sightseeing">("all");
   const [resortPeriod, setResortPeriod] = useState<ResortPeriod>("day");
   const [budgetValue, setBudgetValue] = useState<number | null>(150);
   const [budgetInput, setBudgetInput] = useState<string>("");
-  const [groupSizeInput, setGroupSizeInput] = useState<string>("2");
   const [foodVisitTime, setFoodVisitTime] = useState<FoodVisitTime>("Lunch");
   const [prio1, setPrio1] = useState<PriorityKey>("distance");
   const [prio2, setPrio2] = useState<PriorityKey>("popularity");
   const [prio3, setPrio3] = useState<PriorityKey>("budget");
+  const [noMatchNote, setNoMatchNote] = useState<string | null>(null);
+  const [fallbackCategory, setFallbackCategory] = useState<BizCandidate[]>([]);
 
   const setPriority = useCallback(
     (slot: 1 | 2 | 3, key: PriorityKey) => {
@@ -224,11 +228,7 @@ export function ItineraryScreen() {
     return budgetValue;
   }, [budgetInput, budgetValue]);
 
-  const derivedGroupSize = useMemo(() => {
-    const n = Number(groupSizeInput.trim());
-    if (Number.isFinite(n) && n > 0) return Math.floor(n);
-    return null;
-  }, [groupSizeInput]);
+  const isNature = categorySlug === "nature-adventure";
 
   // This screen remains mounted in tabs; reset to planning whenever user returns.
   useFocusEffect(
@@ -269,6 +269,8 @@ export function ItineraryScreen() {
       return;
     }
     setView("loading");
+    setNoMatchNote(null);
+    setFallbackCategory([]);
 
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
@@ -283,7 +285,7 @@ export function ItineraryScreen() {
       const { data, error } = await supabase
         .from("businesses")
         .select(
-          "id,name,latitude,longitude,allow_reservations,operating_day,operating_night,entrance_fee_pesos,entrance_fee_day_pesos,entrance_fee_night_pesos,accommodations,estimated_cost_min_pesos,estimated_cost_max_pesos,best_visit_times,rating_average,rating_count,categories(slug,name),municipalities(id,name),business_photos(storage_path,sort_order)",
+          "id,name,latitude,longitude,subcategory,allow_reservations,operating_day,operating_night,entrance_fee_pesos,entrance_fee_day_pesos,entrance_fee_night_pesos,accommodations,estimated_cost_min_pesos,estimated_cost_max_pesos,best_visit_times,rating_average,rating_count,categories(slug,name),municipalities(id,name),business_photos(storage_path,sort_order)",
         )
         .eq("status", "approved")
         .eq("allow_reservations", true)
@@ -302,6 +304,7 @@ export function ItineraryScreen() {
           name: String(r.name ?? ""),
           latitude: typeof r.latitude === "number" ? r.latitude : null,
           longitude: typeof r.longitude === "number" ? r.longitude : null,
+          subcategory: typeof r.subcategory === "string" ? r.subcategory : null,
           categorySlug: String(cat?.slug ?? ""),
           categoryName: typeof cat?.name === "string" ? cat.name : null,
           municipalityId: typeof mun?.id === "string" ? mun.id : null,
@@ -322,24 +325,135 @@ export function ItineraryScreen() {
         };
       });
 
+      const narrowedCandidates =
+        categorySlug === "nature-adventure" && natureSubcategory !== "all"
+          ? candidates.filter((c) => String((c as any).subcategory ?? "") === natureSubcategory)
+          : candidates;
+
       const prefs = {
         origin,
         municipalityId,
         categorySlug,
         resortPeriod,
         entranceBudget: categorySlug === "resorts-leisure" ? derivedBudget : null,
-        groupSize:
-          categorySlug === "resorts-leisure" ? derivedGroupSize : categorySlug === "food-dining" ? derivedGroupSize : derivedGroupSize,
+        groupSize: null,
         foodVisitTime: categorySlug === "food-dining" ? foodVisitTime : null,
         foodBudgetPerPerson: categorySlug === "food-dining" ? derivedBudget : null,
         priorities: [prio1, prio2, prio3] as [PriorityKey, PriorityKey, PriorityKey],
       };
 
-      const ranked = rankCandidates(candidates, prefs).slice(0, 5);
+      const ranked = rankCandidates(narrowedCandidates, prefs).slice(0, 5);
       if (ranked.length === 0) {
-        Alert.alert("No matches", "No destinations matched your preferences. Try changing budget, period, or priorities.");
         setStops([]);
-        setView("form");
+
+        // If Budget is 1st priority, suggest closest-to-budget options (relaxed budget constraint).
+        const budgetFirst = prio1 === "budget";
+        const budgetTarget =
+          categorySlug === "resorts-leisure"
+            ? prefs.entranceBudget
+            : categorySlug === "food-dining"
+              ? prefs.foodBudgetPerPerson
+              : null;
+
+        if (budgetFirst && typeof budgetTarget === "number" && Number.isFinite(budgetTarget) && budgetTarget > 0) {
+          const target = Math.round(budgetTarget);
+
+          const feeForResort = (b: BizCandidate): number | null => {
+            const periodOk = prefs.resortPeriod === "day" ? b.operatingDay : b.operatingNight;
+            if (!periodOk) return null;
+            const fee =
+              prefs.resortPeriod === "day"
+                ? b.entranceFeeDay
+                : b.entranceFeeNight;
+            if (typeof fee === "number" && Number.isFinite(fee) && fee >= 0) return Math.round(fee);
+            if (typeof b.entranceFeeDefault === "number" && Number.isFinite(b.entranceFeeDefault) && b.entranceFeeDefault >= 0) {
+              return Math.round(b.entranceFeeDefault);
+            }
+            return null;
+          };
+
+          const foodDiff = (b: BizCandidate): number | null => {
+            const when = prefs.foodVisitTime;
+            if (when) {
+              const bt = b.bestVisitTimes ?? [];
+              if (!bt.includes(when)) return null;
+            }
+            const min = b.estimatedCostMin;
+            const max = b.estimatedCostMax;
+            if (typeof min !== "number" || typeof max !== "number") return null;
+            if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+            if (target >= min && target <= max) return 0;
+            return Math.min(Math.abs(target - min), Math.abs(target - max));
+          };
+
+          const relaxed = narrowedCandidates
+            .map((b) => {
+              if (!b.allowReservations) return null;
+              if (!b.latitude || !b.longitude) return null;
+              if (!b.municipalityId || b.municipalityId !== prefs.municipalityId) return null;
+              if (!b.categorySlug || b.categorySlug !== prefs.categorySlug) return null;
+
+              let diff: number | null = null;
+              let entranceFeePesos: number | null = null;
+              let estPerPerson: number | null = null;
+
+              if (prefs.categorySlug === "resorts-leisure") {
+                entranceFeePesos = feeForResort(b);
+                if (entranceFeePesos == null) return null;
+                diff = Math.abs(entranceFeePesos - target);
+              } else if (prefs.categorySlug === "food-dining") {
+                diff = foodDiff(b);
+                if (diff == null) return null;
+                estPerPerson = target;
+              } else {
+                return null;
+              }
+
+              const distKm = haversineKm(prefs.origin, { latitude: b.latitude, longitude: b.longitude });
+              const pop = Math.max(0, Math.floor(Number(b.ratingCount ?? 0) || 0));
+              return { b, diff, distKm, pop, entranceFeePesos, estPerPerson };
+            })
+            .filter((x): x is NonNullable<typeof x> => !!x)
+            .sort((a, b) => {
+              // Closest budget first, then distance, then popularity.
+              if (a.diff !== b.diff) return a.diff - b.diff;
+              if (a.distKm !== b.distKm) return a.distKm - b.distKm;
+              return b.pop - a.pop;
+            })
+            .slice(0, 5);
+
+          if (relaxed.length) {
+            setNoMatchNote(
+              `No exact budget match for ₱${target}. Showing destinations closest to your budget instead.`,
+            );
+            setFallbackCategory([]);
+            setStops(
+              relaxed.map((x) => ({
+                id: x.b.id,
+                name: x.b.name,
+                latitude: x.b.latitude!,
+                longitude: x.b.longitude!,
+                categoryName: x.b.categoryName ?? undefined,
+                photoUrl: x.b.photoUrl,
+                distanceKm: x.distKm,
+                ratingAverage: x.b.ratingAverage,
+                ratingCount: x.b.ratingCount,
+                estimatedPerPersonPesos: x.estPerPerson,
+                estimatedEntrancePesos: x.entranceFeePesos,
+                estimatedTotalPesos:
+                  prefs.categorySlug === "resorts-leisure" && x.entranceFeePesos != null ? x.entranceFeePesos : null,
+              })),
+            );
+            setView("results");
+            return;
+          }
+        }
+
+        setNoMatchNote(
+          "No destinations matched your preferences. Showing available destinations in your selected category instead.",
+        );
+        setFallbackCategory(narrowedCandidates);
+        setView("results");
         return;
       }
 
@@ -351,19 +465,20 @@ export function ItineraryScreen() {
           longitude: b.longitude!,
           categoryName: b.categoryName ?? undefined,
           photoUrl: b.photoUrl,
+          distanceKm: Number.isFinite(b.distKm) ? b.distKm : null,
+          ratingAverage: b.ratingAverage,
+          ratingCount: b.ratingCount,
           estimatedTotalPesos: b.estimatedTotalPesos ?? null,
-          estimatedEntrancePesos:
-            b.entranceFeePesos != null && (derivedGroupSize ?? 0) > 0
-              ? b.entranceFeePesos * Math.max(1, derivedGroupSize ?? 1)
-              : b.entranceFeePesos ?? null,
+          estimatedEntrancePesos: b.entranceFeePesos ?? null,
           estimatedAccommodationPesos: b.accommodationPick?.pricePesos ?? b.accommodationCheapestPesos ?? null,
           estimatedAccommodationName: b.accommodationPick?.name ?? null,
           estimatedAccommodationPax: b.accommodationPick?.pax ?? null,
-          estimatedGroupSize:
-            derivedGroupSize,
+          estimatedGroupSize: null,
           estimatedPerPersonPesos: b.estimatedTotalPerPersonPesos ?? null,
         })),
       );
+      setNoMatchNote(null);
+      setFallbackCategory([]);
       setView("results");
     } catch (e) {
       Alert.alert("Error", e instanceof Error ? e.message : "Could not generate.");
@@ -374,15 +489,14 @@ export function ItineraryScreen() {
     categorySlug,
     resortPeriod,
     derivedBudget,
-    derivedGroupSize,
     budgetValue,
     budgetInput,
-    groupSizeInput,
     foodVisitTime,
     prio1,
     prio2,
     prio3,
     setStops,
+    natureSubcategory,
   ]);
 
   const content = useMemo(() => {
@@ -406,7 +520,9 @@ export function ItineraryScreen() {
           <View style={styles.resultsHead}>
             <View style={{ flex: 1 }}>
               <Text style={styles.resultsTitle}>Generated Results</Text>
-              <Text style={styles.resultsSub}>{stops.length} destination{stops.length === 1 ? "" : "s"} matched</Text>
+              <Text style={styles.resultsSub}>
+                {stops.length} destination{stops.length === 1 ? "" : "s"} matched
+              </Text>
             </View>
             <Pressable
               onPress={() => setView("form")}
@@ -418,8 +534,19 @@ export function ItineraryScreen() {
           </View>
 
           <View style={{ marginTop: 10 }}>
+            {noMatchNote ? (
+              <View style={styles.noteBox}>
+                <Ionicons name="information-circle-outline" size={18} color={colors.primaryTealDeep} />
+                <Text style={styles.noteText}>{noMatchNote}</Text>
+              </View>
+            ) : null}
+
             {stops.map((s, idx) => (
-              <View key={s.id} style={styles.resultCard}>
+              <Pressable
+                key={s.id}
+                style={({ pressed }) => [styles.resultCard, pressed && { opacity: 0.95 }]}
+                onPress={() => navigation?.navigate?.("Detail", { id: s.id })}
+              >
                 <View style={styles.topBadge} pointerEvents="none">
                   <Text style={styles.topBadgeTxt}>Top {idx + 1}</Text>
                 </View>
@@ -438,6 +565,67 @@ export function ItineraryScreen() {
                     {s.name}
                   </Text>
                   <Text style={styles.resultCat}>{s.categoryName ?? "Destination"}</Text>
+                  <View style={styles.metaRow}>
+                    {([prio1, prio2, prio3] as const).map((k) => {
+                      if (k === "distance") {
+                        return typeof s.distanceKm === "number" ? (
+                          <View key={k} style={[styles.metaPill, styles.metaPillTeal]}>
+                            <Ionicons name="navigate-outline" size={13} color={colors.primaryTealDeep} />
+                            <Text style={[styles.metaPillTxt, styles.metaPillTxtTeal]}>
+                              {s.distanceKm < 1
+                                ? `${Math.round(s.distanceKm * 1000)} m`
+                                : `${s.distanceKm.toFixed(1)} km`}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View key={k} style={[styles.metaPill, styles.metaPillTeal]}>
+                            <Ionicons name="navigate-outline" size={13} color={colors.primaryTealDeep} />
+                            <Text style={[styles.metaPillTxt, styles.metaPillTxtTeal]}>—</Text>
+                          </View>
+                        );
+                      }
+
+                      if (k === "popularity") {
+                        const p = ratingParts(s.ratingAverage, s.ratingCount);
+                        if (p.kind === "new") {
+                          return (
+                            <View key={k} style={[styles.metaPill, styles.metaPillStar]}>
+                              <Ionicons name="star" size={13} color={colors.star} />
+                              <Text style={styles.metaPillTxt}>New</Text>
+                            </View>
+                          );
+                        }
+                        return (
+                          <View key={k} style={[styles.metaPill, styles.metaPillStar]}>
+                            <Ionicons name="star" size={13} color={colors.star} />
+                            <Text style={styles.metaPillTxt}>
+                              {p.averageText} · {p.count} rating{p.count === 1 ? "" : "s"}
+                            </Text>
+                          </View>
+                        );
+                      }
+
+                      // k === "budget"
+                      const perPerson =
+                        typeof s.estimatedPerPersonPesos === "number"
+                          ? Math.round(s.estimatedPerPersonPesos)
+                          : typeof s.estimatedEntrancePesos === "number" && typeof s.estimatedGroupSize === "number"
+                            ? Math.round(s.estimatedEntrancePesos / Math.max(1, s.estimatedGroupSize))
+                            : typeof s.estimatedEntrancePesos === "number"
+                              ? Math.round(s.estimatedEntrancePesos)
+                              : null;
+
+                      return (
+                        <View key={k} style={[styles.metaPill, styles.metaPillBudget]}>
+                          <Ionicons name="cash-outline" size={13} color={colors.navy} />
+                          <Text style={styles.metaPillTxt}>
+                            {perPerson != null ? `${peso(perPerson)}` : "—"}
+                            {typeof s.estimatedPerPersonPesos === "number" ? " / person" : ""}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
                   {typeof s.estimatedGroupSize === "number" ? (
                     <Text style={styles.resultLineMuted}>Group: {s.estimatedGroupSize} person{s.estimatedGroupSize === 1 ? "" : "s"}</Text>
                   ) : null}
@@ -490,8 +678,52 @@ export function ItineraryScreen() {
                   ) : null}
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.muted2} />
-              </View>
+              </Pressable>
             ))}
+
+            {stops.length === 0 ? (
+              fallbackCategory.length ? (
+                <View style={{ marginTop: 6 }}>
+                  {fallbackCategory.slice(0, 10).map((c) => (
+                    <Pressable
+                      key={c.id}
+                      style={({ pressed }) => [styles.resultCard, pressed && { opacity: 0.95 }]}
+                      onPress={() => {
+                        // Keep user inside results; open destination details.
+                        navigation?.navigate?.("Detail", { id: c.id });
+                      }}
+                    >
+                      {c.photoUrl ? (
+                        <Image source={{ uri: c.photoUrl }} style={styles.resultThumb} />
+                      ) : (
+                        <View style={[styles.resultThumb, styles.resultThumbPh]}>
+                          <Ionicons name="image-outline" size={20} color={colors.muted2} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.resultName} numberOfLines={2}>
+                          {c.name}
+                        </Text>
+                        <Text style={styles.resultCat}>
+                          {c.categoryName ?? "Destination"}
+                          {c.municipalityName ? ` · ${c.municipalityName}` : ""}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color={colors.muted2} />
+                    </Pressable>
+                  ))}
+                  {fallbackCategory.length > 10 ? (
+                    <Text style={styles.empty}>
+                      Showing 10 of {fallbackCategory.length} destinations in this category. Adjust preferences to narrow results.
+                    </Text>
+                  ) : null}
+                </View>
+              ) : (
+                <Text style={styles.empty}>
+                  No destinations found for this municipality and category. Try a different municipality or category.
+                </Text>
+              )
+            ) : null}
           </View>
         </View>
       );
@@ -527,9 +759,9 @@ export function ItineraryScreen() {
         <Text style={styles.genLabel}>Choose Category</Text>
         <View style={styles.categoryRow}>
           {[
-            { id: "resorts-leisure", label: "Resort & Nature", icon: "bed-outline" as const, scheme: "resort" as const },
+            { id: "resorts-leisure", label: "Resort & Leisure", icon: "bed-outline" as const, scheme: "resort" as const },
             { id: "nature-adventure", label: "Nature & Adventure", icon: "leaf-outline" as const, scheme: "nature" as const },
-            { id: "food-dining", label: "Food", icon: "restaurant-outline" as const, scheme: "food" as const },
+            { id: "food-dining", label: "Food & Dining", icon: "restaurant-outline" as const, scheme: "food" as const },
           ].map((c) => (
             <View key={c.id} style={{ flex: 1 }}>
               <IconChip
@@ -539,11 +771,39 @@ export function ItineraryScreen() {
                 scheme={c.scheme}
                 variant="card"
                 chipStyle={styles.equalCategoryCard}
-                onPress={() => setCategorySlug(c.id)}
+                onPress={() => {
+                  setCategorySlug(c.id);
+                  if (c.id !== "nature-adventure") setNatureSubcategory("all");
+                  setBudgetInput("");
+                  setBudgetValue(150);
+                }}
               />
             </View>
           ))}
         </View>
+
+        {isNature ? (
+          <>
+            <Text style={styles.genLabel}>Nature subcategory</Text>
+            <View style={styles.genChipRowWrap}>
+              {[
+                { id: "all" as const, label: "All" },
+                { id: "waterfalls-swimming" as const, label: "Waterfalls / Swimming" },
+                { id: "camping-sightseeing" as const, label: "Camping / Sightseeing" },
+              ].map((s) => (
+                <IconChip
+                  key={s.id}
+                  active={natureSubcategory === s.id}
+                  icon="options-outline"
+                  label={s.label}
+                  scheme="neutral"
+                  chipStyle={styles.equalBudgetChip}
+                  onPress={() => setNatureSubcategory(s.id)}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
 
         {categorySlug === "resorts-leisure" ? (
           <View style={styles.row2}>
@@ -566,39 +826,50 @@ export function ItineraryScreen() {
           </View>
         ) : null}
 
-        <Text style={styles.genLabel}>{categorySlug === "resorts-leisure" ? "Entrance budget" : "Budget per person"}</Text>
-        <View style={styles.genChipRowWrap}>
-          {[50, 100, 150, 200].map((b) => (
-            <IconChip
-              key={b}
-              active={budgetValue === b && !budgetInput.trim()}
-              icon="cash-outline"
-              label={`₱${b}`}
-              scheme="budget"
-                      chipStyle={styles.equalBudgetChip}
-              onPress={() => {
-                setBudgetInput("");
-                setBudgetValue(b);
-              }}
+        {isNature ? (
+          <View style={styles.natureNoteBox}>
+            <View style={styles.natureNoteHeader}>
+              <Ionicons name="information-circle-outline" size={18} color={colors.primaryTeal} />
+              <Text style={styles.natureNoteTitle}>Notes</Text>
+            </View>
+            <Text style={styles.natureNoteText}>
+              {natureSubcategory === "waterfalls-swimming"
+                ? "Most waterfalls, rivers, and swimming spots are free. Expect an environmental fee (usually around ₱10–₱20)."
+                : "Most nature destinations have no entrance fee. Expect an environmental fee (usually around ₱10–₱20)."}
+            </Text>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.genLabel}>{categorySlug === "resorts-leisure" ? "Entrance budget" : "Budget per person"}</Text>
+            <View style={styles.genChipRowWrap}>
+              {[50, 100, 150, 200].map((b) => (
+                <IconChip
+                  key={b}
+                  active={budgetValue === b && !budgetInput.trim()}
+                  icon="cash-outline"
+                  label={`₱${b}`}
+                  scheme="budget"
+                  chipStyle={styles.equalBudgetChip}
+                  onPress={() => {
+                    setBudgetInput("");
+                    setBudgetValue(b);
+                  }}
+                />
+              ))}
+            </View>
+            <TextInput
+              value={budgetInput}
+              onChangeText={setBudgetInput}
+              placeholder={
+                categorySlug === "resorts-leisure"
+                  ? "Input custom entrance budget (optional) e.g. ₱250"
+                  : "Input custom budget per person (optional) e.g. ₱250"
+              }
+              keyboardType="numeric"
+              style={styles.input}
             />
-          ))}
-        </View>
-        <TextInput
-          value={budgetInput}
-          onChangeText={setBudgetInput}
-          placeholder="Input custom budget (optional) e.g. ₱250"
-          keyboardType="numeric"
-          style={styles.input}
-        />
-
-        <Text style={styles.genLabel}>Group size</Text>
-        <TextInput
-          value={groupSizeInput}
-          onChangeText={setGroupSizeInput}
-          placeholder="Input group size"
-          keyboardType="numeric"
-          style={styles.input}
-        />
+          </>
+        )}
 
         {categorySlug === "food-dining" ? (
           <>
@@ -670,7 +941,6 @@ export function ItineraryScreen() {
     resortPeriod,
     budgetValue,
     budgetInput,
-    groupSizeInput,
     foodVisitTime,
     prio1,
     prio2,
@@ -678,6 +948,7 @@ export function ItineraryScreen() {
     stops,
     generate,
     setPriority,
+    isNature,
   ]);
 
   return (
@@ -814,6 +1085,17 @@ const styles = StyleSheet.create({
     width: 92,
     justifyContent: "center",
   },
+  natureNoteBox: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(11,184,196,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(11,184,196,0.22)",
+  },
+  natureNoteHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 },
+  natureNoteTitle: { fontSize: 13, fontWeight: "900", color: colors.primaryTealDeep },
+  natureNoteText: { fontSize: 12.5, fontWeight: "600", color: colors.muted2, lineHeight: 18 },
   equalThirdChip: {
     width: 108,
     justifyContent: "center",
@@ -873,6 +1155,35 @@ const styles = StyleSheet.create({
   resultsHead: { marginTop: 12, flexDirection: "row", alignItems: "center", gap: 10 },
   resultsTitle: { fontSize: 20, fontWeight: "800", color: colors.navy },
   resultsSub: { marginTop: 2, fontSize: 13, fontWeight: "500", color: colors.muted2 },
+  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  metaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.chipIdle,
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.22)",
+  },
+  metaPillTxt: { fontSize: 12.5, fontWeight: "800", color: colors.navy },
+  metaPillTeal: { backgroundColor: "rgba(11,184,196,0.10)", borderColor: "rgba(11,184,196,0.22)" },
+  metaPillTxtTeal: { color: colors.primaryTealDeep },
+  metaPillStar: { backgroundColor: "rgba(245,158,11,0.10)", borderColor: "rgba(245,158,11,0.18)" },
+  metaPillBudget: { backgroundColor: "rgba(236,72,153,0.10)", borderColor: "rgba(236,72,153,0.18)" },
+  noteBox: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: "rgba(11,184,196,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(11,184,196,0.22)",
+    marginBottom: 10,
+  },
+  noteText: { flex: 1, fontSize: 12.5, fontWeight: "600", color: colors.muted2, lineHeight: 18 },
   smallBtn: {
     flexDirection: "row",
     alignItems: "center",

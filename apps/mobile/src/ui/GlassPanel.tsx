@@ -15,7 +15,7 @@ type Props = {
   /** BlurView tint; defaults to light. */
   tint?: "light" | "dark" | "default";
   /** Visual preset. */
-  variant?: "frosted" | "subtle";
+  variant?: "frosted" | "subtle" | "smoke";
 };
 
 export function GlassPanel({
@@ -24,7 +24,7 @@ export function GlassPanel({
   contentStyle,
   borderRadius = 22,
   intensity,
-  tint = "light",
+  tint,
   variant = "frosted",
 }: Props) {
   if (Platform.OS === "web") {
@@ -35,28 +35,47 @@ export function GlassPanel({
     );
   }
 
+  const resolvedTint = tint ?? (variant === "smoke" ? "dark" : "light");
   const blur =
     intensity ??
     (variant === "subtle"
       ? Platform.OS === "android"
         ? 28
         : 44
-      : Platform.OS === "android"
-        ? 44
-        : 64);
+      : variant === "smoke"
+        ? Platform.OS === "android"
+          ? 56
+          : 78
+        : Platform.OS === "android"
+          ? 44
+          : 64);
   return (
-    <View style={[styles.outer, variant === "subtle" && styles.outerSubtle, { borderRadius }, style]}>
-      <BlurView intensity={blur} tint={tint} style={[StyleSheet.absoluteFill, { borderRadius }]} />
+    <View
+      style={[
+        styles.outer,
+        variant === "subtle" && styles.outerSubtle,
+        variant === "smoke" && styles.outerSmoke,
+        { borderRadius },
+        style,
+      ]}
+    >
+      <BlurView intensity={blur} tint={resolvedTint} style={[StyleSheet.absoluteFill, { borderRadius }]} />
       <View
         pointerEvents="none"
-        style={[StyleSheet.absoluteFill, variant === "subtle" ? styles.veilSubtle : styles.veil, { borderRadius }]}
+        style={[
+          StyleSheet.absoluteFill,
+          variant === "subtle" ? styles.veilSubtle : variant === "smoke" ? styles.veilSmoke : styles.veil,
+          { borderRadius },
+        ]}
       />
       <LinearGradient
         pointerEvents="none"
         colors={
           variant === "subtle"
             ? ["rgba(255,255,255,0.16)", "rgba(255,255,255,0.04)", "rgba(255,255,255,0.10)"]
-            : ["rgba(255,255,255,0.32)", "rgba(255,255,255,0.06)", "rgba(0,0,0,0.10)"]
+            : variant === "smoke"
+              ? ["rgba(255,255,255,0.10)", "rgba(255,255,255,0.02)", "rgba(0,0,0,0.24)"]
+              : ["rgba(255,255,255,0.32)", "rgba(255,255,255,0.06)", "rgba(0,0,0,0.10)"]
         }
         locations={[0, 0.55, 1]}
         start={{ x: 0.1, y: 0 }}
@@ -85,11 +104,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 12,
   },
+  outerSmoke: {
+    borderColor: "rgba(255,255,255,0.26)",
+    shadowOpacity: 0.22,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
   veil: {
     backgroundColor: "rgba(255,255,255,0.10)",
   },
   veilSubtle: {
     backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  veilSmoke: {
+    backgroundColor: "rgba(10, 15, 25, 0.22)",
   },
   sheen: {
     opacity: 1,

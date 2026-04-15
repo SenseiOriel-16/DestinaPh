@@ -4,12 +4,14 @@ import { DestinationDetailScreen } from "../screens/DestinationDetailScreen";
 import { ExploreScreen } from "../screens/ExploreScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { BookingRequestScreen } from "../screens/BookingRequestScreen";
-import type { BookingsStackParamList, ExploreStackParamList, HomeStackParamList } from "./tabTypes";
+import { ItineraryScreen } from "../screens/ItineraryScreen";
+import type { BookingsStackParamList, ExploreStackParamList, HomeStackParamList, ItineraryStackParamList } from "./tabTypes";
 import { colors } from "../theme/colors";
 
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 const ExploreStack = createNativeStackNavigator<ExploreStackParamList>();
 const BookingsStack = createNativeStackNavigator<BookingsStackParamList>();
+const ItineraryStack = createNativeStackNavigator<ItineraryStackParamList>();
 
 export function HomeStackNavigator() {
   return (
@@ -68,5 +70,25 @@ export function BookingsStackNavigator() {
         }}
       />
     </BookingsStack.Navigator>
+  );
+}
+
+export function ItineraryStackNavigator() {
+  return (
+    <ItineraryStack.Navigator screenOptions={{ headerShown: false }}>
+      <ItineraryStack.Screen name="ItineraryMain" component={ItineraryScreen} />
+      <ItineraryStack.Screen name="Detail" component={DestinationDetailScreen} />
+      <ItineraryStack.Screen
+        name="BookingRequest"
+        component={BookingRequestScreen}
+        options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: colors.navy },
+          headerTintColor: "#fff",
+          headerTitleStyle: { fontWeight: "700" },
+          title: "Reserve",
+        }}
+      />
+    </ItineraryStack.Navigator>
   );
 }

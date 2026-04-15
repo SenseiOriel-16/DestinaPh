@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { playNotificationSound } from "../lib/notificationSound";
 
 type Conversation = {
   id: string;
   owner_id: string;
+  owner_cleared_at?: string | null;
 };
 
 type Msg = {
@@ -50,7 +52,7 @@ export function SupportPage() {
 
     const { data: existing, error: selErr } = await supabase
       .from("support_conversations")
-      .select("id,owner_id")
+      .select("id,owner_id,owner_cleared_at")
       .eq("owner_id", uid)
       .maybeSingle();
 
@@ -63,7 +65,7 @@ export function SupportPage() {
     const { data: inserted, error: insErr } = await supabase
       .from("support_conversations")
       .insert({ owner_id: uid })
-      .select("id,owner_id")
+      .select("id,owner_id,owner_cleared_at")
       .maybeSingle();
 
     if (insErr) {
@@ -90,9 +92,16 @@ export function SupportPage() {
       setErr(error.message);
       return;
     }
-    setRows((data as Msg[]) ?? []);
+    const list = (data as Msg[]) ?? [];
+    const clearedAt = conv?.owner_cleared_at;
+    if (clearedAt) {
+      const cut = new Date(clearedAt).getTime();
+      setRows(list.filter((m) => new Date(m.created_at).getTime() > cut));
+    } else {
+      setRows(list);
+    }
     window.setTimeout(scrollToBottom, 50);
-  }, []);
+  }, [conv?.owner_cleared_at]);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +127,10 @@ export function SupportPage() {
         { event: "INSERT", schema: "public", table: "support_messages", filter: `conversation_id=eq.${conv.id}` },
         (payload) => {
           const row = payload.new as Msg;
-          setRows((prev) => [...prev, row]);
+          const clearedAt = conv?.owner_cleared_at;
+          if (clearedAt && new Date(row.created_at) <= new Date(clearedAt)) return;
+          setRows((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
+          if (row.sender_role === "admin") playNotificationSound();
           window.setTimeout(scrollToBottom, 30);
         },
       )
@@ -190,17 +202,25 @@ export function SupportPage() {
         setErr("Please sign in again.");
         return;
       }
-      const { error } = await supabase.from("support_messages").insert({
-        conversation_id: conv.id,
-        sender_id: uid,
-        sender_role: "business_owner",
-        body,
-        is_read_by_owner: true,
-        is_read_by_admin: false,
-      });
+      const { data, error } = await supabase
+        .from("support_messages")
+        .insert({
+          conversation_id: conv.id,
+          sender_id: uid,
+          sender_role: "business_owner",
+          body,
+          is_read_by_owner: true,
+          is_read_by_admin: false,
+        })
+        .select("id,conversation_id,sender_id,sender_role,body,created_at,edited_at")
+        .maybeSingle();
       if (error) {
         setErr(error.message);
         return;
+      }
+      if (data?.id) {
+        const row = data as Msg;
+        setRows((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
       }
       setDraft("");
       window.setTimeout(scrollToBottom, 50);
@@ -250,53 +270,35 @@ export function SupportPage() {
     if (error) setErr(error.message);
   };
 
-  const deleteConversation = async () => {
+  const clearConversation = async () => {
     if (!conv?.id) return;
     if (
       !window.confirm(
-        "Delete this entire conversation? All messages will be removed. You can start a new thread afterward.",
+        "Clear this conversation for you only? The admin will still keep their copy.",
       )
     ) {
       return;
     }
     setErr(null);
-    const { error } = await supabase.from("support_conversations").delete().eq("id", conv.id);
+    const { error } = await supabase.from("support_conversations").update({ owner_cleared_at: new Date().toISOString() }).eq("id", conv.id);
     if (error) {
       setErr(error.message);
       return;
     }
-    setConv(null);
     setRows([]);
     setEditingId(null);
     setEditText("");
-    const next = await ensureConversation();
-    setConv(next);
-    if (next?.id) await loadMessages(next.id);
   };
 
   return (
     <div className="page page--wide support-page">
-      <header className="owner-reservations__hero support-page__hero">
-        <div className="owner-reservations__hero-text">
-          <p className="owner-reservations__eyebrow">Support</p>
-          <h1 className="owner-reservations__title">Contact support</h1>
-          <p className="owner-reservations__lead">
-            Message the DestinaPH admin team. You&apos;ll get a reply here.
-          </p>
-          {conv?.id ? (
-            <div className="support-page__hero-actions">
-              <button
-                type="button"
-                className="btn btn-outline support-page__danger"
-                onClick={() => void deleteConversation()}
-              >
-                Delete conversation
-              </button>
-            </div>
-          ) : null}
+      {conv?.id ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <button type="button" className="btn btn-outline support-page__danger" onClick={() => void clearConversation()}>
+            Clear conversation
+          </button>
         </div>
-        <div className="owner-reservations__hero-art" aria-hidden />
-      </header>
+      ) : null}
 
       {err ? <div className="alert-banner alert-banner--error">{err}</div> : null}
 

@@ -24,7 +24,7 @@ import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { HERO_BACKGROUND } from "../constants/heroBackground";
 import { TRAVEL_CATEGORIES } from "../data/travelCategories";
 import { firstPhotoPublicUrl, formatBusinessAddress } from "../lib/businessDisplay";
-import { formatRatingPill } from "../lib/businessRatingDisplay";
+import { ratingParts } from "../lib/businessRatingDisplay";
 import { formatDistanceAway, haversineKm, type LatLng } from "../lib/geo";
 import { getInterestSlugs } from "../lib/onboardingStorage";
 import { supabase } from "../lib/supabase";
@@ -297,8 +297,19 @@ export function HomeScreen({ navigation }: Props) {
                       </View>
                     ) : null}
                     <View style={[styles.nearPill, styles.nearPillStar]}>
-                      <Ionicons name="star" size={13} color={colors.star} />
-                      <Text style={styles.nearPillText}>{formatRatingPill(item.rating_average, item.rating_count)}</Text>
+                      {(() => {
+                        const p = ratingParts(item.rating_average, item.rating_count);
+                        if (p.kind === "new") {
+                          return <Text style={styles.nearPillText}>New</Text>;
+                        }
+                        return (
+                          <>
+                            <Text style={styles.nearPillText}>{p.averageText}</Text>
+                            <Ionicons name="star" size={13} color={colors.star} style={{ marginTop: 1 }} />
+                            <Text style={styles.nearPillText}>{p.countText}</Text>
+                          </>
+                        );
+                      })()}
                     </View>
                   </View>
 

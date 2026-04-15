@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -150,6 +151,8 @@ export function InterestSelectScreen({ navigation, route }: Props) {
                       pressed && { opacity: 0.94 },
                     ]}
                   >
+                    <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
+                    <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.cardVeil]} />
                     <View style={styles.cardBody}>
                       <View style={styles.cardTopRow}>
                         <View style={[styles.iconSquare, { backgroundColor: theme.iconBg }]}>
@@ -296,12 +299,15 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 20,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "transparent",
     shadowColor: "#000",
     shadowOpacity: 0.12,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 5,
+  },
+  cardVeil: {
+    backgroundColor: "rgba(255,255,255,0.10)",
   },
   cardBody: {
     minHeight: 128,

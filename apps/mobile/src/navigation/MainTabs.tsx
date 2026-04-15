@@ -1,8 +1,7 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { ItineraryScreen } from "../screens/ItineraryScreen";
 import { ProfileScreen } from "../screens/ProfileScreen";
 import { DestinaTabBar } from "./DestinaTabBar";
-import { BookingsStackNavigator, ExploreStackNavigator, HomeStackNavigator } from "./tabStacks";
+import { BookingsStackNavigator, ExploreStackNavigator, HomeStackNavigator, ItineraryStackNavigator } from "./tabStacks";
 import type { TabParamList } from "./tabTypes";
 import { colors } from "../theme/colors";
 
@@ -23,7 +22,7 @@ export function MainTabs() {
     >
       <Tab.Screen name="Home" component={HomeStackNavigator} options={{ title: "Home" }} />
       <Tab.Screen name="Explore" component={ExploreStackNavigator} options={{ title: "Explore" }} />
-      <Tab.Screen name="Itinerary" component={ItineraryScreen} options={{ title: "Itinerary" }} />
+      <Tab.Screen name="Itinerary" component={ItineraryStackNavigator} options={{ title: "Itinerary" }} />
       <Tab.Screen name="Bookings" component={BookingsStackNavigator} options={{ title: "Bookings" }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: "Profile" }} />
     </Tab.Navigator>

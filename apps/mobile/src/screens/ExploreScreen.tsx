@@ -18,7 +18,7 @@ import type { RootStackParamList } from "../../App";
 import type { ExploreStackParamList, TabParamList } from "../navigation/tabTypes";
 import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { firstPhotoPublicUrl, formatBusinessAddress } from "../lib/businessDisplay";
-import { formatRatingPill } from "../lib/businessRatingDisplay";
+import { ratingParts } from "../lib/businessRatingDisplay";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 
@@ -31,6 +31,7 @@ type Row = {
   id: string;
   name: string;
   description: string | null;
+  subcategory?: string | null;
   tags?: string[] | null;
   status: string;
   address_line: string | null;
@@ -49,7 +50,7 @@ type Row = {
 const categoryChips = [
   { id: "all", label: "All" },
   { id: "nature-adventure", label: "Nature & Adventure" },
-  { id: "resorts-leisure", label: "Resorts & Leisure" },
+  { id: "resorts-leisure", label: "Resort & Leisure" },
   { id: "food-dining", label: "Food & Dining" },
 ];
 
@@ -58,6 +59,7 @@ export function ExploreScreen({ navigation, route }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [municipalities, setMunicipalities] = useState<{ id: string; name: string }[]>([]);
   const [category, setCategory] = useState<string>("all");
+  const [natureSubcategory, setNatureSubcategory] = useState<"all" | "waterfalls-swimming" | "camping-sightseeing">("all");
   const [municipality, setMunicipality] = useState<string>("all");
   const [search, setSearch] = useState("");
 
@@ -87,7 +89,7 @@ export function ExploreScreen({ navigation, route }: Props) {
     const { data, error } = await supabase
       .from("businesses")
       .select(
-        "id,name,description,tags,status,address_line,rating_average,rating_count,estimated_cost_min_pesos,estimated_cost_max_pesos,best_visit_times,categories(slug,name),municipalities(id,name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
+        "id,name,description,subcategory,tags,status,address_line,rating_average,rating_count,estimated_cost_min_pesos,estimated_cost_max_pesos,best_visit_times,categories(slug,name),municipalities(id,name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
       )
       .eq("status", "approved")
       .order("sort_order", { ascending: true, foreignTable: "business_photos" });
@@ -121,6 +123,10 @@ export function ExploreScreen({ navigation, route }: Props) {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       const catOk = category === "all" ? true : (r.categories?.slug ?? "") === category;
+      const subOk =
+        category !== "nature-adventure" || natureSubcategory === "all"
+          ? true
+          : String(r.subcategory ?? "") === natureSubcategory;
       const munOk = municipality === "all" ? true : (r.municipalities?.id ?? "") === municipality;
       const tags = Array.isArray(r.tags) ? r.tags : [];
       const tagsOk = !q || tags.some((t) => (t ?? "").toLowerCase().includes(q));
@@ -129,9 +135,9 @@ export function ExploreScreen({ navigation, route }: Props) {
         r.name.toLowerCase().includes(q) ||
         (r.description ?? "").toLowerCase().includes(q) ||
         (r.municipalities?.name ?? "").toLowerCase().includes(q);
-      return catOk && munOk && (textOk || tagsOk);
+      return catOk && subOk && munOk && (textOk || tagsOk);
     });
-  }, [rows, category, municipality, search]);
+  }, [rows, category, natureSubcategory, municipality, search]);
 
   const listHeader = (
     <View style={{ paddingBottom: 8 }}>
@@ -170,13 +176,38 @@ export function ExploreScreen({ navigation, route }: Props) {
         {categoryChips.map((chip) => (
           <Pressable
             key={chip.id}
-            onPress={() => setCategory(chip.id)}
+            onPress={() => {
+              setCategory(chip.id);
+              if (chip.id !== "nature-adventure") setNatureSubcategory("all");
+            }}
             style={[styles.chip, category === chip.id && styles.chipOn]}
           >
             <Text style={[styles.chipText, category === chip.id && styles.chipTextOn]}>{chip.label}</Text>
           </Pressable>
         ))}
       </ScrollView>
+
+      {category === "nature-adventure" ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.chipScroll, { paddingBottom: 8 }]}
+        >
+          {[
+            { id: "all" as const, name: "All nature" },
+            { id: "waterfalls-swimming" as const, name: "Waterfalls / Swimming" },
+            { id: "camping-sightseeing" as const, name: "Camping / Sightseeing" },
+          ].map((s) => (
+            <Pressable
+              key={s.id}
+              onPress={() => setNatureSubcategory(s.id)}
+              style={[styles.chipSm, natureSubcategory === s.id && styles.chipOn]}
+            >
+              <Text style={[styles.chipTextSm, natureSubcategory === s.id && styles.chipTextOn]}>{s.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      ) : null}
 
       <ScrollView
         horizontal
@@ -208,12 +239,6 @@ export function ExploreScreen({ navigation, route }: Props) {
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         renderItem={({ item }) => {
           const photoUri = firstPhotoPublicUrl(item.business_photos);
-          const cmin = item.estimated_cost_min_pesos;
-          const cmax = item.estimated_cost_max_pesos;
-          const costLine =
-            typeof cmin === "number" && typeof cmax === "number" && cmin >= 0 && cmax >= cmin
-              ? `₱${cmin.toLocaleString("en-PH")}–₱${cmax.toLocaleString("en-PH")} / person`
-              : null;
           return (
           <Pressable
             style={styles.card}
@@ -234,17 +259,35 @@ export function ExploreScreen({ navigation, route }: Props) {
                 <Ionicons name="heart-outline" size={22} color={colors.muted2} />
               </View>
               <Text style={styles.catLine}>{item.categories?.name ?? "Listing"}</Text>
+              {(item.categories?.slug ?? "") === "nature-adventure" && item.subcategory ? (
+                <Text style={styles.subcatLine}>
+                  {item.subcategory === "waterfalls-swimming"
+                    ? "Waterfalls / Swimming"
+                    : item.subcategory === "camping-sightseeing"
+                      ? "Camping / Sightseeing"
+                      : item.subcategory}
+                </Text>
+              ) : null}
               <Text style={styles.cardMeta} numberOfLines={2}>
                 {formatBusinessAddress(item)}
               </Text>
-              {costLine ? <Text style={styles.costLine}>{costLine}</Text> : null}
-              <Text style={styles.rating}>
-                <Ionicons name="star" size={14} color={colors.star} />{" "}
-                <Text style={styles.ratingStrong}>{formatRatingPill(item.rating_average, item.rating_count)}</Text>
-                {item.rating_count != null && item.rating_count > 0 ? (
-                  <Text style={styles.reviews}> ({item.rating_count})</Text>
-                ) : null}
-              </Text>
+              <View style={styles.ratingRow}>
+                {(() => {
+                  const p = ratingParts(item.rating_average, item.rating_count);
+                  if (p.kind === "new") {
+                    return <Text style={styles.ratingSoft}>New</Text>;
+                  }
+                  return (
+                    <>
+                      <Text style={styles.ratingSoft}>{p.averageText}</Text>
+                      <Ionicons name="star" size={14} color={colors.star} style={{ marginTop: 1 }} />
+                      <Text style={styles.ratingSoft}>
+                        {p.countText} rating{p.count === 1 ? "" : "s"}
+                      </Text>
+                    </>
+                  );
+                })()}
+              </View>
             </View>
           </Pressable>
           );
@@ -392,20 +435,22 @@ const styles = StyleSheet.create({
     color: colors.primaryTeal,
     marginTop: 4,
   },
+  subcatLine: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.muted2,
+    marginTop: 2,
+  },
   cardMeta: {
     fontSize: 13,
     color: colors.muted,
     marginTop: 2,
   },
-  costLine: { marginTop: 6, fontSize: 13, fontWeight: "700", color: colors.navy },
-  rating: {
-    marginTop: 8,
-    fontSize: 13,
-    color: colors.text,
-  },
-  ratingStrong: {
-    fontWeight: "700",
-    color: colors.navy,
+  ratingRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
+  ratingSoft: {
+    fontWeight: "600",
+    color: colors.muted2,
+    letterSpacing: 0.1,
   },
   reviews: {
     color: colors.muted2,

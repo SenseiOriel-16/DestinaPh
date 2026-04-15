@@ -521,8 +521,10 @@ export function OwnerReservationsPage() {
                 const isUnread = needsHostAction(r.status) && !readIds.has(r.id);
                 return (
                 <tr key={r.id} className={isUnread ? "owner-reservations__row--unread" : undefined}>
-                  <td className="owner-reservations__cell-title">{r.businesses?.name ?? "—"}</td>
-                  <td>
+                  <td className="owner-reservations__cell-title" data-label="Property">
+                    {r.businesses?.name ?? "—"}
+                  </td>
+                  <td data-label="Stay">
                     <div className="owner-reservations__cell-muted">
                       {r.check_in && r.check_out ? `${r.check_in} → ${r.check_out}` : "—"}
                     </div>
@@ -530,22 +532,22 @@ export function OwnerReservationsPage() {
                       Est. {peso(r.estimated_total_pesos)} · Down {peso(r.downpayment_pesos)}
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Guest / room">
                     <div className="owner-reservations__cell-muted">{r.guest_count ?? "—"} guests</div>
                     <div className="owner-reservations__cell-note">{r.accommodation_name ?? "—"}</div>
                   </td>
-                  <td>
+                  <td data-label="Guest payment">
                     <div className="owner-reservations__cell-muted">{(r.payment_method ?? "—").toUpperCase()}</div>
                     <div className="owner-reservations__cell-note" style={{ wordBreak: "break-all" }}>
                       {r.payment_reference ?? "—"}
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Requested">
                     <div className="owner-reservations__cell-muted">
                       {new Date(r.requested_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}
                     </div>
                   </td>
-                  <td>
+                  <td data-label="Proof">
                     {r.payment_proof_storage_path ? (
                       <div className="owner-reservations__proof">
                         {proofUrls[r.id] ? (
@@ -591,7 +593,7 @@ export function OwnerReservationsPage() {
                       <span className="owner-reservations__cell-note">—</span>
                     )}
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     {needsHostAction(r.status) ? (
                       <div className="owner-reservations__actions">
                         <button

@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AdminManageClientsSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
@@ -45,6 +46,7 @@ function thumbUrl(b: OwnerBusiness): string | null {
 }
 
 export function ListingsPage() {
+  const navigate = useNavigate();
   const [initialLoad, setInitialLoad] = useState(true);
   const [pending, setPending] = useState<OwnerProfile[]>([]);
   const [approved, setApproved] = useState<OwnerProfile[]>([]);
@@ -130,6 +132,10 @@ export function ListingsPage() {
     }
     if (expandedId === id) setExpandedId(null);
     await load();
+  };
+
+  const messageClient = (ownerId: string) => {
+    navigate(`/support?owner_id=${encodeURIComponent(ownerId)}`);
   };
 
   const declinePending = async (id: string) => {
@@ -513,6 +519,13 @@ export function ListingsPage() {
                       </td>
                       <td>
                         <div className="manage-clients__actions">
+                          <button
+                            type="button"
+                            className="btn btn-ghost manage-clients__btn-outline"
+                            onClick={() => messageClient(r.id)}
+                          >
+                            Message
+                          </button>
                           {suspended ? (
                             <button
                               type="button"

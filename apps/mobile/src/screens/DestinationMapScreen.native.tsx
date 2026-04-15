@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BlurView } from "expo-blur";
 import type { RootStackParamList } from "../../App";
 import {
   fetchOsrmRoute,
@@ -13,6 +14,7 @@ import {
 } from "../lib/destinationMapUtils";
 import { openGoogleMapsDirections } from "../lib/mapExternal";
 import { colors } from "../theme/colors";
+import { GlassPanel } from "../ui/GlassPanel";
 
 type Props = NativeStackScreenProps<RootStackParamList, "DestinationMap">;
 
@@ -115,34 +117,46 @@ export function DestinationMapScreen({ route, navigation }: Props) {
       </MapView>
 
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <Pressable style={styles.iconCircle} onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.iconText}>‹</Text>
+        <Pressable style={styles.iconCircleOuter} onPress={() => navigation.goBack()} hitSlop={12}>
+          <GlassPanel style={styles.iconCircle} contentStyle={styles.iconCircleContent} borderRadius={20} variant="subtle" intensity={50}>
+            <Text style={styles.iconText}>‹</Text>
+          </GlassPanel>
         </Pressable>
         <Text style={styles.topTitle} numberOfLines={1}>
           Map
         </Text>
-        <Pressable style={styles.iconCircle} onPress={() => navigation.goBack()} hitSlop={12}>
-          <Text style={styles.iconText}>✕</Text>
+        <Pressable style={styles.iconCircleOuter} onPress={() => navigation.goBack()} hitSlop={12}>
+          <GlassPanel style={styles.iconCircle} contentStyle={styles.iconCircleContent} borderRadius={20} variant="subtle" intensity={50}>
+            <Text style={styles.iconText}>✕</Text>
+          </GlassPanel>
         </Pressable>
       </View>
 
       {loading ? (
-        <View style={styles.loadingBanner}>
+        <GlassPanel style={styles.loadingBanner} contentStyle={styles.loadingBannerContent} borderRadius={14} variant="subtle" intensity={54}>
           <ActivityIndicator color={colors.primaryTeal} />
           <Text style={styles.loadingText}>Loading route…</Text>
-        </View>
+        </GlassPanel>
       ) : null}
 
       {permDenied ? (
-        <View style={[styles.card, styles.floatingCard, { top: insets.top + 56 }]}>
+        <GlassPanel
+          style={[styles.card, styles.floatingCard, { top: insets.top + 56 }]}
+          contentStyle={styles.cardContent}
+          borderRadius={16}
+          variant="subtle"
+          intensity={54}
+        >
           <Text style={styles.cardTitle}>Location off</Text>
           <Text style={styles.cardBody}>
             Turn on location to see driving directions from you to this place. You can still open Google Maps below.
           </Text>
-        </View>
+        </GlassPanel>
       ) : null}
 
       <View style={[styles.bottomCard, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+        <BlurView intensity={58} tint="light" style={StyleSheet.absoluteFill} />
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.bottomVeil]} />
         <View style={styles.summaryRow}>
           <Text style={styles.summaryIcon}>🚗</Text>
           <View style={{ flex: 1 }}>
@@ -180,14 +194,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     zIndex: 2,
   },
+  iconCircleOuter: { width: 40, height: 40 },
   iconCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.95)",
-    alignItems: "center",
-    justifyContent: "center",
   },
+  iconCircleContent: { alignItems: "center", justifyContent: "center", width: "100%", height: "100%" },
   iconText: { fontSize: 22, color: colors.navy, fontWeight: "700", marginTop: -2 },
   topTitle: {
     flex: 1,
@@ -203,27 +216,22 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: "42%",
     alignSelf: "center",
-    backgroundColor: "rgba(255,255,255,0.95)",
+    overflow: "hidden",
+    zIndex: 1,
+  },
+  loadingBannerContent: {
     paddingHorizontal: 20,
     paddingVertical: 14,
-    borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    zIndex: 1,
   },
   loadingText: { fontWeight: "600", color: colors.navy },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 14,
     marginHorizontal: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    overflow: "hidden",
   },
+  cardContent: { padding: 14 },
   floatingCard: { position: "absolute", left: 0, right: 0, zIndex: 1 },
   cardTitle: { fontWeight: "800", color: colors.navy, marginBottom: 6 },
   cardBody: { fontSize: 14, color: colors.muted, lineHeight: 20 },
@@ -232,16 +240,21 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 18,
     paddingTop: 16,
+    overflow: "hidden",
+    borderTopWidth: StyleSheet.hairlineWidth * 2,
+    borderTopColor: "rgba(255,255,255,0.55)",
     shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 12,
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: -8 },
+    elevation: 14,
+  },
+  bottomVeil: {
+    backgroundColor: "rgba(255,255,255,0.10)",
   },
   summaryRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 14 },
   summaryIcon: { fontSize: 22, marginTop: 2 },

@@ -16,6 +16,10 @@ export type ItineraryStop = {
   longitude: number;
   categoryName?: string;
   photoUrl?: string | null;
+  // Optional metadata for generated results (to validate priorities).
+  distanceKm?: number | null;
+  ratingAverage?: number | null;
+  ratingCount?: number | null;
   // Optional computed costs for generated itineraries (mainly Resorts).
   estimatedTotalPesos?: number | null;
   estimatedEntrancePesos?: number | null;

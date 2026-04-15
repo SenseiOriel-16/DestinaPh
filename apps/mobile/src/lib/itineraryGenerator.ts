@@ -22,6 +22,7 @@ export type BizCandidate = {
   longitude: number | null;
   categorySlug: string;
   categoryName: string | null;
+  subcategory?: string | null;
   municipalityId: string | null;
   municipalityName: string | null;
   ratingAverage: number | null;

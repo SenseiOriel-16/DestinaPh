@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 
 type ConversationRow = {
   id: string;
   owner_id: string;
   last_message_at: string;
+  admin_cleared_at?: string | null;
   profiles: { full_name: string | null; registration_business_name: string | null } | null;
 };
 
@@ -36,6 +38,7 @@ function supportMessageWithinEditWindow(createdAtIso: string): boolean {
 }
 
 export function SupportInboxPage() {
+  const [searchParams] = useSearchParams();
   const [convs, setConvs] = useState<ConversationRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -61,16 +64,23 @@ export function SupportInboxPage() {
     setErr(null);
     const { data, error } = await supabase
       .from("support_conversations")
-      .select("id,owner_id,last_message_at,profiles:owner_id(full_name,registration_business_name)")
+      .select("id,owner_id,last_message_at,admin_cleared_at,profiles:owner_id(full_name,registration_business_name)")
       .order("last_message_at", { ascending: false })
       .limit(250);
     if (error) {
       setErr(error.message);
       return;
     }
-    const list = (data as unknown as ConversationRow[]) ?? [];
+    const raw = (data as unknown as ConversationRow[]) ?? [];
+    const list = raw.filter((c) => !c.admin_cleared_at || new Date(c.last_message_at) > new Date(c.admin_cleared_at));
     setConvs(list);
+
+    const ownerIdParam = searchParams.get("owner_id");
     setSelectedId((cur) => {
+      if (ownerIdParam) {
+        const match = list.find((c) => c.owner_id === ownerIdParam);
+        if (match) return match.id;
+      }
       if (cur && list.some((c) => c.id === cur)) return cur;
       return list[0]?.id ?? null;
     });
@@ -87,7 +97,14 @@ export function SupportInboxPage() {
       setErr(error.message);
       return;
     }
-    setMsgs((data as Msg[]) ?? []);
+    const list = (data as Msg[]) ?? [];
+    const clearedAt = convs.find((c) => c.id === conversationId)?.admin_cleared_at;
+    if (clearedAt) {
+      const cut = new Date(clearedAt).getTime();
+      setMsgs(list.filter((m) => new Date(m.created_at).getTime() > cut));
+    } else {
+      setMsgs(list);
+    }
   }, []);
 
   const markOwnerMsgsRead = useCallback(async (conversationId: string) => {
@@ -116,7 +133,7 @@ export function SupportInboxPage() {
         const row = payload.new as Msg;
         void loadConvs();
         if (row.conversation_id === selectedId) {
-          setMsgs((prev) => [...prev, row]);
+          setMsgs((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
           if (row.sender_role === "business_owner")
             void supabase.from("support_messages").update({ is_read_by_admin: true }).eq("id", row.id);
         }
@@ -174,17 +191,25 @@ export function SupportInboxPage() {
         setErr("Please sign in again.");
         return;
       }
-      const { error } = await supabase.from("support_messages").insert({
-        conversation_id: selected.id,
-        sender_id: uid,
-        sender_role: "admin",
-        body,
-        is_read_by_admin: true,
-        is_read_by_owner: false,
-      });
+      const { data, error } = await supabase
+        .from("support_messages")
+        .insert({
+          conversation_id: selected.id,
+          sender_id: uid,
+          sender_role: "admin",
+          body,
+          is_read_by_admin: true,
+          is_read_by_owner: false,
+        })
+        .select("id,conversation_id,sender_id,sender_role,body,created_at,edited_at,is_read_by_admin")
+        .maybeSingle();
       if (error) {
         setErr(error.message);
         return;
+      }
+      if (data?.id && data.conversation_id === selected.id) {
+        const row = data as Msg;
+        setMsgs((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, row]));
       }
       setDraft("");
     } finally {
@@ -232,12 +257,12 @@ export function SupportInboxPage() {
     if (error) setErr(error.message);
   };
 
-  const deleteConversation = async () => {
+  const clearConversation = async () => {
     if (!selected?.id) return;
-    if (!window.confirm("Delete this entire conversation? All messages will be removed.")) return;
+    if (!window.confirm("Clear this conversation for admin only? The owner will still keep their copy.")) return;
     setErr(null);
     const id = selected.id;
-    const { error } = await supabase.from("support_conversations").delete().eq("id", id);
+    const { error } = await supabase.from("support_conversations").update({ admin_cleared_at: new Date().toISOString() }).eq("id", id);
     if (error) {
       setErr(error.message);
       return;
@@ -301,8 +326,8 @@ export function SupportInboxPage() {
                 </div>
               </div>
               {selected ? (
-                <button type="button" className="btn btn-outline admin-support__delete-conv" onClick={() => void deleteConversation()}>
-                  Delete conversation
+                <button type="button" className="btn btn-outline admin-support__delete-conv" onClick={() => void clearConversation()}>
+                  Clear conversation
                 </button>
               ) : null}
             </div>

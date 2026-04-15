@@ -1966,6 +1966,52 @@ textarea {
   font-size: 14px;
 }
 
+.btn-text {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--admin-teal);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.btn-text:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.btn-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(8, 143, 143, 0.28);
+  background: rgba(8, 143, 143, 0.10);
+  color: var(--admin-teal);
+  font-weight: 800;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: transform 0.12s var(--ease-out), background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.btn-chip:hover:not(:disabled) {
+  background: rgba(8, 143, 143, 0.14);
+  border-color: rgba(8, 143, 143, 0.38);
+  transform: translateY(-1px);
+}
+
+.btn-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .auth-row {
   display: flex;
   justify-content: space-between;

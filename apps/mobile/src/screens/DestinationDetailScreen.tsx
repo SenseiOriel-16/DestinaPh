@@ -24,7 +24,7 @@ import type { HomeStackParamList, TabParamList } from "../navigation/tabTypes";
 import { useItinerary } from "../context/ItineraryContext";
 import { type AccommodationItem, normalizeAccommodations } from "../lib/accommodations";
 import { formatBusinessAddress, sortedPhotoPublicUrls } from "../lib/businessDisplay";
-import { formatRatingPill, formatRatingSubtitle } from "../lib/businessRatingDisplay";
+import { ratingParts, formatRatingSubtitle } from "../lib/businessRatingDisplay";
 import { supabase } from "../lib/supabase";
 import { trackListingIntentVisit } from "../lib/trackListingMetric";
 import { colors } from "../theme/colors";
@@ -41,6 +41,7 @@ type BusinessRow = {
   name: string;
   description: string | null;
   short_description: string | null;
+  subcategory?: string | null;
   address_line: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -94,12 +95,12 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const { width: screenW } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const { addStop } = useItinerary();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tagline, setTagline] = useState<string | null>(null);
   const [address, setAddress] = useState("");
   const [categoryName, setCategoryName] = useState<string | null>(null);
+  const [subcategory, setSubcategory] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
@@ -139,6 +140,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           name,
           description,
           short_description,
+          subcategory,
           allow_reservations,
           address_line,
           latitude,
@@ -196,6 +198,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         }
         setAddress(formatBusinessAddress(row));
         setCategoryName(row.categories?.name ?? null);
+        setSubcategory(typeof (row as any).subcategory === "string" ? String((row as any).subcategory) : null);
         setTags(Array.isArray(row.tags) ? row.tags : []);
         setLat(row.latitude);
         setLng(row.longitude);
@@ -423,19 +426,6 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
     }
   };
 
-  const addItinerary = () => {
-    if (lat == null || lng == null) return;
-    trackListingIntentVisit(id);
-    addStop({
-      id,
-      name: title,
-      latitude: lat,
-      longitude: lng,
-      categoryName: categoryName ?? undefined,
-      photoUrl: images[0] ?? null,
-    });
-  };
-
   const openInAppMap = () => {
     if (lat == null || lng == null) return;
     trackListingIntentVisit(id);
@@ -532,8 +522,19 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           <View style={styles.titleRow}>
             <Text style={styles.title}>{title}</Text>
             <View style={styles.ratingPill}>
-              <Ionicons name="star" size={14} color={colors.star} />
-              <Text style={styles.ratingText}>{formatRatingPill(ratingAvg, ratingCount)}</Text>
+              {(() => {
+                const p = ratingParts(ratingAvg, ratingCount);
+                if (p.kind === "new") {
+                  return <Text style={styles.ratingText}>New</Text>;
+                }
+                return (
+                  <>
+                    <Text style={styles.ratingText}>{p.averageText}</Text>
+                    <Ionicons name="star" size={14} color={colors.star} style={{ marginTop: 1 }} />
+                    <Text style={styles.ratingText}>{p.countText}</Text>
+                  </>
+                );
+              })()}
             </View>
           </View>
           <Text style={styles.ratingSub}>{formatRatingSubtitle(ratingAvg, ratingCount)}</Text>
@@ -542,6 +543,17 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
             {categoryName ? (
               <View style={[styles.chip, styles.chipCategory]}>
                 <Text style={styles.chipCategoryText}>{categoryName}</Text>
+              </View>
+            ) : null}
+            {categoryName === "Nature & Adventure" && subcategory ? (
+              <View style={[styles.chip, styles.chipSubcategory]}>
+                <Text style={styles.chipSubcategoryText}>
+                  {subcategory === "waterfalls-swimming"
+                    ? "Waterfalls / Swimming"
+                    : subcategory === "camping-sightseeing"
+                      ? "Camping / Sightseeing"
+                      : subcategory}
+                </Text>
               </View>
             ) : null}
             {tags.map((t) => (
@@ -777,13 +789,6 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
             </Text>
           )}
 
-      <Pressable
-        style={[styles.cta, lat == null && { opacity: 0.5 }]}
-        disabled={lat == null || lng == null}
-        onPress={addItinerary}
-      >
-        <Text style={styles.ctaText}>Add to itinerary</Text>
-      </Pressable>
           <Pressable
             style={[styles.ctaSecondary, !allowRes && { opacity: 0.55 }]}
             disabled={!allowRes}
@@ -989,6 +994,8 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, fontWeight: "600", color: colors.navy },
   chipCategory: { backgroundColor: `${colors.primaryTeal}18` },
   chipCategoryText: { fontSize: 12, fontWeight: "700", color: colors.primaryTeal },
+  chipSubcategory: { backgroundColor: `${colors.accentGreen}18` },
+  chipSubcategoryText: { fontSize: 12, fontWeight: "700", color: colors.accentGreen },
   locRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 12 },
   locText: { flex: 1, fontSize: 13, color: colors.muted2, fontWeight: "500", lineHeight: 18 },
   distText: { flex: 1, fontSize: 13, color: colors.primaryTeal, fontWeight: "600" },

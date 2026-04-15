@@ -23,7 +23,7 @@ export function BrandAppIcon({ size = 96, glass = false }: Props) {
   ) : (
     <Image
       source={SYSTEM_ICON}
-      style={styles.img}
+      style={[styles.img, { width: Math.round(size * 0.92), height: Math.round(size * 0.92) }]}
       resizeMode="contain"
       accessibilityLabel="DestinaPH"
       onError={() => setLoadFailed(true)}
@@ -33,11 +33,11 @@ export function BrandAppIcon({ size = 96, glass = false }: Props) {
   if (glass) {
     return (
       <GlassPanel
-        variant="frosted"
-        intensity={58}
+        variant="smoke"
+        intensity={84}
         borderRadius={r}
         style={[styles.wrapGlass, { width: size, height: size, borderRadius: r }]}
-        contentStyle={styles.glassInner}
+        contentStyle={[styles.glassInner, { width: "100%", height: "100%" }]}
       >
         {inner}
       </GlassPanel>
@@ -69,7 +69,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   img: {
-    width: "92%",
-    height: "92%",
+    // size is injected inline to avoid % sizing inside GlassPanel
   },
 });

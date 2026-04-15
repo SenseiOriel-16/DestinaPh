@@ -7,6 +7,14 @@ import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 import { PasswordField } from "../components/PasswordField";
 
+/** Supabase Edge Function **slug** (last path segment). */
+const FN_PASSWORD_RESET_REQUEST =
+  process.env.EXPO_PUBLIC_EDGE_FN_PASSWORD_RESET_REQUEST ?? "password-reset-request";
+const FN_PASSWORD_RESET_VERIFY =
+  process.env.EXPO_PUBLIC_EDGE_FN_PASSWORD_RESET_VERIFY ?? "password-reset-verify";
+const FN_PASSWORD_RESET_CONFIRM =
+  process.env.EXPO_PUBLIC_EDGE_FN_PASSWORD_RESET_CONFIRM ?? "password-reset-confirm";
+
 type Props = NativeStackScreenProps<RootStackParamList, "ForgotPassword">;
 type Step = "email" | "otp" | "reset" | "done";
 
@@ -46,7 +54,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
     setBusy(true);
     setMessage(null);
     try {
-      const { data, error } = await supabase.functions.invoke("password-reset-request", {
+      const { data, error } = await supabase.functions.invoke(FN_PASSWORD_RESET_REQUEST, {
         body: { email: email.trim().toLowerCase() },
       });
       if (error) {
@@ -65,7 +73,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
     setBusy(true);
     setMessage(null);
     try {
-      const { data, error } = await supabase.functions.invoke("password-reset-verify", {
+      const { data, error } = await supabase.functions.invoke(FN_PASSWORD_RESET_VERIFY, {
         body: { email: email.trim().toLowerCase(), otp: otp.trim() },
       });
       if (error) {
@@ -93,7 +101,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
     setBusy(true);
     setMessage(null);
     try {
-      const { error } = await supabase.functions.invoke("password-reset-confirm", {
+      const { error } = await supabase.functions.invoke(FN_PASSWORD_RESET_CONFIRM, {
         body: { email: email.trim().toLowerCase(), reset_token: resetToken, new_password: newPassword },
       });
       if (error) {
@@ -155,13 +163,29 @@ export function ForgotPasswordScreen({ navigation }: Props) {
             </View>
 
             <View style={styles.row}>
-              <Pressable disabled={!canResend} onPress={() => void requestOtp()}>
-                <Text style={[styles.link, !canResend && styles.linkDisabled]}>
+              <Pressable
+                disabled={!canResend}
+                onPress={() => void requestOtp()}
+                style={({ pressed }) => [
+                  styles.miniBtn,
+                  pressed && canResend && { opacity: 0.92 },
+                  !canResend && styles.miniBtnDisabled,
+                ]}
+              >
+                <Text style={[styles.miniBtnText, !canResend && styles.miniBtnTextDisabled]}>
                   {canResend ? "Resend OTP" : `Resend in ${formatSeconds(resendRemaining)}`}
                 </Text>
               </Pressable>
-              <Pressable disabled={busy} onPress={() => setStep("email")}>
-                <Text style={[styles.link, busy && styles.linkDisabled]}>Change email</Text>
+              <Pressable
+                disabled={busy}
+                onPress={() => setStep("email")}
+                style={({ pressed }) => [
+                  styles.miniBtn,
+                  pressed && !busy && { opacity: 0.92 },
+                  busy && styles.miniBtnDisabled,
+                ]}
+              >
+                <Text style={[styles.miniBtnText, busy && styles.miniBtnTextDisabled]}>Change email</Text>
               </Pressable>
             </View>
           </>
@@ -172,7 +196,14 @@ export function ForgotPasswordScreen({ navigation }: Props) {
             <Text style={styles.label}>New password</Text>
             <View style={styles.inputShell}>
               <Ionicons name="lock-closed-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
-              <PasswordField variant="inline" inputStyle={styles.input} value={newPassword} onChangeText={setNewPassword} />
+              <PasswordField
+                variant="inline"
+                inputStyle={styles.input}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="Enter new password"
+                autoComplete="new-password"
+              />
             </View>
 
             <Text style={styles.label}>Confirm password</Text>
@@ -183,6 +214,8 @@ export function ForgotPasswordScreen({ navigation }: Props) {
                 inputStyle={styles.input}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
+                placeholder="Confirm new password"
+                autoComplete="new-password"
               />
             </View>
           </>
@@ -252,8 +285,17 @@ const styles = StyleSheet.create({
   inputIcon: { marginLeft: 10 },
   input: { flex: 1, paddingHorizontal: 10, paddingVertical: 12, fontSize: 16, color: colors.text },
   row: { flexDirection: "row", justifyContent: "space-between", marginTop: 12 },
-  link: { fontWeight: "800", color: colors.primaryTeal },
-  linkDisabled: { opacity: 0.5 },
+  miniBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(14, 201, 182, 0.35)",
+    backgroundColor: "rgba(14, 201, 182, 0.10)",
+  },
+  miniBtnDisabled: { opacity: 0.55 },
+  miniBtnText: { fontWeight: "900", color: colors.primaryTeal, fontSize: 13 },
+  miniBtnTextDisabled: { color: colors.muted2 },
   msgBox: {
     flexDirection: "row",
     gap: 8,

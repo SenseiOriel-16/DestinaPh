@@ -22,6 +22,12 @@ const RESORT_SLUG = "resorts-leisure";
 const NATURE_SLUG = "nature-adventure";
 const FOOD_SLUG = "food-dining";
 
+const NATURE_SUBCATEGORIES = [
+  { value: "waterfalls-swimming", label: "Waterfalls / Swimming" },
+  { value: "camping-sightseeing", label: "Camping / Sightseeing" },
+] as const;
+type NatureSubcategory = (typeof NATURE_SUBCATEGORIES)[number]["value"];
+
 const BEST_TIMES = ["Breakfast", "Lunch", "Dinner"] as const;
 type BestTime = (typeof BEST_TIMES)[number];
 
@@ -79,6 +85,7 @@ export function ListingEditorPage() {
   const [entranceFeeDay, setEntranceFeeDay] = useState("");
   const [entranceFeeNight, setEntranceFeeNight] = useState("");
   const [natureEntranceFee, setNatureEntranceFee] = useState("");
+  const [natureSubcategory, setNatureSubcategory] = useState<NatureSubcategory | "">("");
   const [addressLine, setAddressLine] = useState("");
   const [latitudeStr, setLatitudeStr] = useState("");
   const [longitudeStr, setLongitudeStr] = useState("");
@@ -91,12 +98,6 @@ export function ListingEditorPage() {
   const [busy, setBusy] = useState(false);
   const [saveSuccessKind, setSaveSuccessKind] = useState<null | "created" | "updated">(null);
   const [detailReady, setDetailReady] = useState(isNew);
-  const [ratingSummary, setRatingSummary] = useState<{
-    total: number;
-    average: number | null;
-    byStar: Record<1 | 2 | 3 | 4 | 5, number>;
-  } | null>(null);
-  const [ratingBreakdownOpen, setRatingBreakdownOpen] = useState(false);
   const [foodCostRange, setFoodCostRange] = useState("");
   const [bestTimes, setBestTimes] = useState<BestTime[]>([]);
 
@@ -225,6 +226,7 @@ export function ListingEditorPage() {
   useEffect(() => {
     if (!isNature) {
       setNatureEntranceFee("");
+      setNatureSubcategory("");
     }
   }, [isNature]);
 
@@ -306,8 +308,12 @@ export function ListingEditorPage() {
       if (rowIsNature) {
         const fee = row.entrance_fee_pesos;
         setNatureEntranceFee(fee != null && Number.isFinite(Number(fee)) ? String(fee) : "");
+        const sc = typeof (row as any).subcategory === "string" ? String((row as any).subcategory) : "";
+        const ok = NATURE_SUBCATEGORIES.some((x) => x.value === sc);
+        setNatureSubcategory(ok ? (sc as NatureSubcategory) : "");
       } else {
         setNatureEntranceFee("");
+        setNatureSubcategory("");
       }
       setAddressLine(String(row.address_line ?? ""));
       const latRaw = row.latitude as number | string | null | undefined;
@@ -342,20 +348,6 @@ export function ListingEditorPage() {
         .select("id", { count: "exact", head: true })
         .eq("business_id", id!);
       setExistingPhotoCount(photoCountErr ? 0 : photoCount ?? 0);
-
-      const ra = row.rating_average as number | null | undefined;
-      const rc = Number(row.rating_count ?? 0);
-      const { data: starRows } = await supabase.from("business_ratings").select("stars").eq("business_id", id!);
-      const byStar: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-      for (const s of starRows ?? []) {
-        const n = Number((s as { stars?: number }).stars);
-        if (n >= 1 && n <= 5) byStar[n as 1 | 2 | 3 | 4 | 5]++;
-      }
-      setRatingSummary({
-        total: Number.isFinite(rc) ? Math.floor(rc) : 0,
-        average: ra != null && Number.isFinite(Number(ra)) ? Number(ra) : null,
-        byStar,
-      });
 
       const muniId = String(row.municipality_id ?? "");
       setLegacyGeoNote(null);
@@ -516,6 +508,11 @@ export function ListingEditorPage() {
       setBusy(false);
       return;
     }
+    if (isNature && !natureSubcategory) {
+      setMsg("Nature subcategory is required. If the listing is a river/swimming spot, choose Waterfalls / Swimming.");
+      setBusy(false);
+      return;
+    }
 
     let latitude: number | null = null;
     let longitude: number | null = null;
@@ -608,7 +605,7 @@ export function ListingEditorPage() {
       owner_id: uid,
       name: name.trim(),
       category_id: categoryId,
-      subcategory: null as string | null,
+      subcategory: isNature && natureSubcategory ? natureSubcategory : null,
       short_description: shortDescription.trim() || null,
       description: shortDescription.trim() || null,
       allow_reservations: allowReservations,
@@ -854,21 +851,42 @@ export function ListingEditorPage() {
               )}
 
             {isNature && (
-              <div className="field">
-                <label htmlFor="fee-nature">Entrance / environmental fee (₱) (optional)</label>
-                <input
-                  id="fee-nature"
-                  type="number"
-                  min={0}
-                  step={1}
-                  placeholder="e.g. 50"
-                  value={natureEntranceFee}
-                  onChange={(e) => setNatureEntranceFee(e.target.value)}
-                />
-                <p className="editor-help" style={{ margin: "4px 0 0" }}>
-                  Optional for public areas (e.g., river/swimming spots) that still require an environmental fee.
-                </p>
-              </div>
+              <>
+                <div className="field">
+                  <label htmlFor="nature-subcat">Nature subcategory</label>
+                  <select
+                    id="nature-subcat"
+                    value={natureSubcategory}
+                    onChange={(e) => setNatureSubcategory(e.target.value as NatureSubcategory | "")}
+                  >
+                    <option value="">— Select subcategory —</option>
+                    {NATURE_SUBCATEGORIES.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="editor-help" style={{ margin: "4px 0 0" }}>
+                    If your listing is a <strong>river / swimming spot</strong>, choose <strong>Waterfalls / Swimming</strong>.
+                  </p>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="fee-nature">Entrance / environmental fee (₱) (optional)</label>
+                  <input
+                    id="fee-nature"
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="e.g. 50"
+                    value={natureEntranceFee}
+                    onChange={(e) => setNatureEntranceFee(e.target.value)}
+                  />
+                  <p className="editor-help" style={{ margin: "4px 0 0" }}>
+                    Optional for public areas (e.g., river/swimming spots) that still require an environmental fee.
+                  </p>
+                </div>
+              </>
             )}
             </div>
 
@@ -979,59 +997,6 @@ export function ListingEditorPage() {
           </div>
 
           <div className="editor-col">
-            {!isNew && ratingSummary ? (
-              <div className="card editor-card listing-ratings-card">
-                <h2 className="editor-card__title">Traveler ratings</h2>
-                {ratingSummary.total === 0 ? (
-                  <p className="listing-ratings__summary">
-                    No ratings yet. Travelers can rate your place from the app after visiting.
-                  </p>
-                ) : (
-                  <>
-                    <p className="listing-ratings__summary">
-                      <strong>{ratingSummary.total}</strong> {ratingSummary.total === 1 ? "user has" : "users have"} rated
-                      {ratingSummary.average != null ? (
-                        <>
-                          {" "}
-                          · Average <strong>{ratingSummary.average.toFixed(1)}</strong>★
-                        </>
-                      ) : null}
-                    </p>
-                    <div className="listing-ratings__dropdown">
-                      <button
-                        type="button"
-                        className="listing-ratings__toggle"
-                        aria-expanded={ratingBreakdownOpen}
-                        onClick={() => setRatingBreakdownOpen((o) => !o)}
-                      >
-                        {ratingBreakdownOpen ? "Hide breakdown" : "Show breakdown by stars"}
-                        <span className="listing-ratings__chev" aria-hidden>
-                          {ratingBreakdownOpen ? "\u25B2" : "\u25BC"}
-                        </span>
-                      </button>
-                      {ratingBreakdownOpen ? (
-                        <ul className="listing-ratings__breakdown">
-                          {([5, 4, 3, 2, 1] as const).map((star) => {
-                            const n = ratingSummary.byStar[star];
-                            return (
-                              <li key={star} className="listing-ratings__row">
-                                <span className="listing-ratings__stars">
-                                  {star} star{star === 1 ? "" : "s"}
-                                </span>
-                                <span className="listing-ratings__count">
-                                  {n} {n === 1 ? "user" : "users"}
-                                </span>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      ) : null}
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : null}
-
             <div className="card editor-card">
               <h2 className="editor-card__title">{isFood ? "Food details" : "Accommodations"}</h2>
 

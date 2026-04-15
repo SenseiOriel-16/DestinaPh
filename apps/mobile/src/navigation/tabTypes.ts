@@ -18,10 +18,16 @@ export type BookingsStackParamList = {
   BookingRequest: { businessId: string };
 };
 
+export type ItineraryStackParamList = {
+  ItineraryMain: undefined;
+  Detail: { id: string };
+  BookingRequest: { businessId: string };
+};
+
 export type TabParamList = {
   Home: NavigatorScreenParams<HomeStackParamList> | undefined;
   Explore: NavigatorScreenParams<ExploreStackParamList> | undefined;
-  Itinerary: undefined;
+  Itinerary: NavigatorScreenParams<ItineraryStackParamList> | undefined;
   Bookings: NavigatorScreenParams<BookingsStackParamList> | undefined;
   Profile: undefined;
 };

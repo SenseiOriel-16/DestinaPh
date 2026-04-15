@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
+import { GlassPanel } from "../ui/GlassPanel";
 
 export function TermsPrivacyModal({
   visible,
@@ -20,7 +21,13 @@ export function TermsPrivacyModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={mustAccept ? undefined : onClose}>
       <Pressable style={styles.overlay} onPress={mustAccept ? undefined : onClose} />
       <View style={styles.wrap} pointerEvents="box-none">
-        <View style={styles.card}>
+        <GlassPanel
+          style={styles.cardOuter}
+          contentStyle={styles.cardInner}
+          borderRadius={22}
+          variant="subtle"
+          intensity={52}
+        >
           <View style={styles.head}>
             <View style={styles.headIcon}>
               <Ionicons name="shield-checkmark" size={22} color={colors.primaryTeal} />
@@ -69,7 +76,7 @@ export function TermsPrivacyModal({
               <Text style={styles.btnPrimaryTxt}>{mustAccept ? "I Agree" : "I Agree (Save)"}</Text>
             </Pressable>
           </View>
-        </View>
+        </GlassPanel>
       </View>
     </Modal>
   );
@@ -78,18 +85,8 @@ export function TermsPrivacyModal({
 const styles = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(15, 23, 42, 0.55)" },
   wrap: { flex: 1, justifyContent: "flex-end", padding: 16 },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.10)",
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 14,
-  },
+  cardOuter: { overflow: "hidden" },
+  cardInner: {},
   head: {
     flexDirection: "row",
     alignItems: "center",
@@ -97,8 +94,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(15,23,42,0.08)",
-    backgroundColor: "rgba(11,184,196,0.06)",
+    borderBottomColor: "rgba(255,255,255,0.42)",
+    backgroundColor: "rgba(255,255,255,0.30)",
   },
   headIcon: {
     width: 38,
@@ -116,17 +113,23 @@ const styles = StyleSheet.create({
   h: { marginTop: 8, fontSize: 14, fontWeight: "900", color: colors.navy },
   p: { marginTop: 6, fontSize: 13.5, lineHeight: 19, color: colors.text, fontWeight: "500" },
   link: { color: colors.primaryTeal, fontWeight: "800" },
-  actions: { padding: 14, gap: 10, flexDirection: "row", borderTopWidth: 1, borderTopColor: "rgba(15,23,42,0.08)" },
+  actions: {
+    padding: 14,
+    gap: 10,
+    flexDirection: "row",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.42)",
+  },
   btnPrimary: { flex: 1, backgroundColor: colors.primaryTeal, paddingVertical: 13, borderRadius: 14, alignItems: "center" },
   btnPrimaryTxt: { color: "#fff", fontWeight: "900", fontSize: 14.5 },
   btnGhost: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "rgba(255,255,255,0.70)",
     paddingVertical: 13,
     borderRadius: 14,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.12)",
+    borderColor: "rgba(255,255,255,0.65)",
   },
   btnGhostTxt: { color: colors.navy, fontWeight: "900", fontSize: 14.5 },
   btnPressed: { opacity: 0.9 },

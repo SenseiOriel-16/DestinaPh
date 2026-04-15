@@ -3,6 +3,14 @@ import { Link } from "react-router-dom";
 import { AuthSplitLayout } from "../components/AuthSplitLayout";
 import { supabase } from "../lib/supabaseClient";
 
+/** Supabase Edge Function **slug** (last path segment), not the display title in the dashboard. */
+const FN_PASSWORD_RESET_REQUEST =
+  import.meta.env.VITE_EDGE_FN_PASSWORD_RESET_REQUEST ?? "password-reset-request";
+const FN_PASSWORD_RESET_VERIFY =
+  import.meta.env.VITE_EDGE_FN_PASSWORD_RESET_VERIFY ?? "password-reset-verify";
+const FN_PASSWORD_RESET_CONFIRM =
+  import.meta.env.VITE_EDGE_FN_PASSWORD_RESET_CONFIRM ?? "password-reset-confirm";
+
 type Step = "email" | "otp" | "reset" | "done";
 
 function formatSeconds(s: number) {
@@ -19,6 +27,8 @@ export function ForgotPasswordPage() {
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +48,7 @@ export function ForgotPasswordPage() {
     setBusy(true);
     setError(null);
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke("password-reset-request", {
+      const { data, error: fnErr } = await supabase.functions.invoke(FN_PASSWORD_RESET_REQUEST, {
         body: { email: email.trim().toLowerCase() },
       });
       if (fnErr) {
@@ -57,7 +67,7 @@ export function ForgotPasswordPage() {
     setBusy(true);
     setError(null);
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke("password-reset-verify", {
+      const { data, error: fnErr } = await supabase.functions.invoke(FN_PASSWORD_RESET_VERIFY, {
         body: { email: email.trim().toLowerCase(), otp: otp.trim() },
       });
       if (fnErr) {
@@ -85,7 +95,7 @@ export function ForgotPasswordPage() {
     setBusy(true);
     setError(null);
     try {
-      const { error: fnErr } = await supabase.functions.invoke("password-reset-confirm", {
+      const { error: fnErr } = await supabase.functions.invoke(FN_PASSWORD_RESET_CONFIRM, {
         body: { email: email.trim().toLowerCase(), reset_token: resetToken, new_password: newPassword },
       });
       if (fnErr) {
@@ -139,7 +149,7 @@ export function ForgotPasswordPage() {
                   <input
                     id="otp"
                     inputMode="numeric"
-                    pattern="\\d{6}"
+                    pattern="[0-9]{6}"
                     placeholder="6 digits"
                     value={otp}
                     onChange={(e) => setOtp(e.target.value.replace(/[^\d]/g, "").slice(0, 6))}
@@ -150,15 +160,10 @@ export function ForgotPasswordPage() {
               </div>
 
               <div className="auth-row" style={{ justifyContent: "space-between" }}>
-                <button
-                  type="button"
-                  className="btn-text"
-                  disabled={!canResend || busy}
-                  onClick={() => void requestOtp()}
-                >
+                <button type="button" className="btn-chip" disabled={!canResend || busy} onClick={() => void requestOtp()}>
                   {canResend ? "Resend OTP" : `Resend in ${formatSeconds(resendRemaining)}`}
                 </button>
-                <button type="button" className="btn-text" onClick={() => setStep("email")} disabled={busy}>
+                <button type="button" className="btn-chip" onClick={() => setStep("email")} disabled={busy}>
                   Change email
                 </button>
               </div>
@@ -173,12 +178,21 @@ export function ForgotPasswordPage() {
                   <span>🔒</span>
                   <input
                     id="newpw"
-                    type="password"
+                    type={showNewPw ? "text" : "password"}
                     autoComplete="new-password"
+                    placeholder="Enter new password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
                   />
+                  <button
+                    type="button"
+                    className="toggle-pw"
+                    onClick={() => setShowNewPw((s) => !s)}
+                    aria-label={showNewPw ? "Hide password" : "Show password"}
+                  >
+                    {showNewPw ? "Hide" : "Show"}
+                  </button>
                 </div>
               </div>
               <div className="field">
@@ -187,12 +201,21 @@ export function ForgotPasswordPage() {
                   <span>🔒</span>
                   <input
                     id="confpw"
-                    type="password"
+                    type={showConfirmPw ? "text" : "password"}
                     autoComplete="new-password"
+                    placeholder="Confirm new password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                   />
+                  <button
+                    type="button"
+                    className="toggle-pw"
+                    onClick={() => setShowConfirmPw((s) => !s)}
+                    aria-label={showConfirmPw ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPw ? "Hide" : "Show"}
+                  </button>
                 </div>
               </div>
             </>

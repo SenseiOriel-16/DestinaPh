@@ -2,6 +2,49 @@ import { corsPreflight, getOtpPepper, getServiceClient, isValidEmail, json, norm
 
 type Body = { email?: string; reset_token?: string; new_password?: string };
 
+async function getUserIdByEmailViaAdminApi(email: string): Promise<string | null> {
+  const url = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL");
+  if (!url) throw new Error("Missing env var: SUPABASE_URL (or VITE_SUPABASE_URL)");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceKey) throw new Error("Missing env var: SUPABASE_SERVICE_ROLE_KEY");
+
+  const res = await fetch(`${url}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, {
+    method: "GET",
+    headers: {
+      apikey: serviceKey,
+      authorization: `Bearer ${serviceKey}`,
+    },
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`admin users lookup failed: ${res.status} ${t}`);
+  }
+  const data = (await res.json()) as { users?: Array<{ id: string; email?: string }> };
+  const u = data.users?.[0];
+  return u?.id ?? null;
+}
+
+async function updatePasswordViaAdminApi(userId: string, newPassword: string): Promise<void> {
+  const url = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL");
+  if (!url) throw new Error("Missing env var: SUPABASE_URL (or VITE_SUPABASE_URL)");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceKey) throw new Error("Missing env var: SUPABASE_SERVICE_ROLE_KEY");
+
+  const res = await fetch(`${url}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: "PUT",
+    headers: {
+      apikey: serviceKey,
+      authorization: `Bearer ${serviceKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ password: newPassword }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`admin update user failed: ${res.status} ${t}`);
+  }
+}
+
 Deno.serve(async (req) => {
   const pre = corsPreflight(req);
   if (pre) return pre;
@@ -43,18 +86,16 @@ Deno.serve(async (req) => {
     return json({ error: "Reset link expired. Please request a new OTP." }, 400);
   }
 
-  // Update Supabase Auth password via admin API
-  const { data: userRes, error: getErr } = await supabase.auth.admin.getUserByEmail(email);
-  if (getErr || !userRes?.user?.id) {
-    // Generic response; still clear token rows to avoid reuse
-    await supabase.from("password_reset_otps").delete().eq("email", email);
-    return json({ ok: true });
-  }
-
-  const uid = userRes.user.id;
-  const { error: updErr } = await supabase.auth.admin.updateUserById(uid, { password: newPassword });
-  if (updErr) {
-    console.error("[password-reset-confirm] updateUserById failed:", updErr.message);
+  // Update Supabase Auth password via Admin REST API (works even if supabase-js admin methods are unavailable)
+  try {
+    const uid = await getUserIdByEmailViaAdminApi(email);
+    if (!uid) {
+      await supabase.from("password_reset_otps").delete().eq("email", email);
+      return json({ ok: true });
+    }
+    await updatePasswordViaAdminApi(uid, newPassword);
+  } catch (e) {
+    console.error("[password-reset-confirm] admin api failed:", e);
     return json({ error: "Unable to reset password." }, 500);
   }
 

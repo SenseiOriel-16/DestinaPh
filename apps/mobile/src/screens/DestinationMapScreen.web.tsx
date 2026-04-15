@@ -1,5 +1,4 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import * as Location from "expo-location";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,25 +18,32 @@ export function DestinationMapScreen({ route, navigation }: Props) {
   const [distanceM, setDistanceM] = useState<number | null>(null);
   const [permDenied, setPermDenied] = useState(false);
 
+  function getBrowserPosition(): Promise<{ latitude: number; longitude: number }> {
+    return new Promise((resolve, reject) => {
+      if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+        reject(new Error("Geolocation is not available in this browser."));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+        (err) => reject(err),
+        { enableHighAccuracy: false, maximumAge: 15_000, timeout: 12_000 },
+      );
+    });
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     setDurationSec(null);
     setDistanceM(null);
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      setPermDenied(true);
-      setLoading(false);
-      return;
-    }
-    setPermDenied(false);
     try {
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const from = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      const from = await getBrowserPosition();
+      setPermDenied(false);
       const { durationSec: d, distanceM: dist } = await fetchOsrmRoute(from, destination);
       setDurationSec(d);
       setDistanceM(dist);
     } catch {
-      /* ignore */
+      setPermDenied(true);
     } finally {
       setLoading(false);
     }
