@@ -130,9 +130,7 @@ export function LoginPage() {
                 />
                 Remember me
               </label>
-              <a href="#reset" onClick={(e) => e.preventDefault()}>
-                Forgot Password?
-              </a>
+              <Link to="/forgot-password">Forgot Password?</Link>
             </div>
             {error && <div style={{ color: "#dc2626", fontSize: 14, marginBottom: 14 }}>{error}</div>}
             <button className="btn btn-primary" type="submit" disabled={busy}>

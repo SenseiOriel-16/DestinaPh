@@ -306,6 +306,17 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
                 </Text>
                 <Text style={styles.switchLink}>{mode === "signup" ? "Sign in" : "Create account"}</Text>
               </Pressable>
+
+              {mode === "signin" ? (
+                <Pressable
+                  style={styles.forgotRow}
+                  onPress={() => navigation.navigate("ForgotPassword")}
+                  disabled={busy}
+                  hitSlop={8}
+                >
+                  <Text style={[styles.switchLink, busy && styles.disabledText]}>Forgot password?</Text>
+                </Pressable>
+              ) : null}
             </GlassPanel>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -497,6 +508,10 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 4,
   },
+  forgotRow: {
+    marginTop: 14,
+    alignItems: "center",
+  },
   switchMuted: {
     fontSize: 15,
     color: colors.muted2,
@@ -505,5 +520,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
     color: colors.primaryTeal,
+  },
+  disabledText: {
+    opacity: 0.6,
   },
 });

@@ -30,6 +30,7 @@ import { getInterestSlugs } from "../lib/onboardingStorage";
 import { supabase } from "../lib/supabase";
 import { BrandAppIcon } from "../ui/BrandAppIcon";
 import { colors } from "../theme/colors";
+import { BookingNotificationBell } from "../components/BookingNotificationBell";
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<HomeStackParamList, "HomeMain">,
@@ -176,10 +177,7 @@ export function HomeScreen({ navigation }: Props) {
             <Text style={styles.brandTag}>Discover Destinations. Plan Smarter.</Text>
           </View>
         </View>
-        <Pressable style={styles.bell} hitSlop={8}>
-          <Ionicons name="notifications-outline" size={22} color={colors.muted2} />
-          <View style={styles.bellDot} />
-        </Pressable>
+        <BookingNotificationBell variant="inline" />
       </View>
 
       <View style={styles.hero} collapsable={false}>
@@ -351,27 +349,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.muted,
     marginTop: 2,
-  },
-  bell: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  bellDot: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.danger,
-    borderWidth: 2,
-    borderColor: colors.white,
   },
   hero: {
     height: 220,

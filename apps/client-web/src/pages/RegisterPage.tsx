@@ -7,6 +7,7 @@ import {
   fetchBarangays,
   fetchCitiesAndMunicipalities,
   fetchProvinces,
+  normalizePsgcCode,
   type PsgcBarangay,
   type PsgcCityMunicipality,
   type PsgcProvince,
@@ -81,7 +82,10 @@ export function RegisterPage() {
         const muns = await fetchCitiesAndMunicipalities(geoProvCode);
         if (cancelled) return;
         setPsgcMuns(muns);
-        setGeoMunCode((prev) => (muns.some((m) => m.code === prev) ? prev : ""));
+        setGeoMunCode((prev) => {
+          const p = normalizePsgcCode(prev);
+          return muns.some((m) => m.code === p) ? p : "";
+        });
         setPsgcBrgys([]);
         setGeoBrgyCode("");
       } catch (e) {
@@ -109,7 +113,10 @@ export function RegisterPage() {
         const brs = await fetchBarangays(geoMunCode);
         if (cancelled) return;
         setPsgcBrgys(brs);
-        setGeoBrgyCode((prev) => (brs.some((b) => b.code === prev) ? prev : ""));
+        setGeoBrgyCode((prev) => {
+          const p = normalizePsgcCode(prev);
+          return brs.some((b) => b.code === p) ? p : "";
+        });
       } catch (e) {
         if (!cancelled) setGeoError(e instanceof Error ? e.message : "Could not load barangays.");
       } finally {

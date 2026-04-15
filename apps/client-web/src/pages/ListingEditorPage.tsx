@@ -8,6 +8,7 @@ import {
   fetchBarangays,
   fetchCitiesAndMunicipalities,
   fetchProvinces,
+  normalizePsgcCode,
   type PsgcBarangay,
   type PsgcCityMunicipality,
   type PsgcProvince,
@@ -166,7 +167,10 @@ export function ListingEditorPage() {
         const muns = await fetchCitiesAndMunicipalities(geoProvCode);
         if (cancelled) return;
         setPsgcMuns(muns);
-        setGeoMunCode((prev) => (muns.some((m) => m.code === prev) ? prev : ""));
+        setGeoMunCode((prev) => {
+          const p = normalizePsgcCode(prev);
+          return muns.some((m) => m.code === p) ? p : "";
+        });
         setPsgcBrgys([]);
         setGeoBrgyCode("");
       } catch (e) {
@@ -194,7 +198,10 @@ export function ListingEditorPage() {
         const brs = await fetchBarangays(geoMunCode);
         if (cancelled) return;
         setPsgcBrgys(brs);
-        setGeoBrgyCode((prev) => (brs.some((b) => b.code === prev) ? prev : ""));
+        setGeoBrgyCode((prev) => {
+          const p = normalizePsgcCode(prev);
+          return brs.some((b) => b.code === p) ? p : "";
+        });
       } catch (e) {
         if (!cancelled) setGeoError(e instanceof Error ? e.message : "Could not load barangays.");
       } finally {
@@ -364,8 +371,8 @@ export function ListingEditorPage() {
 
       const provSlug = (mun as { provinces?: { slug?: string; name?: string } | null }).provinces?.slug;
       const munSlug = (mun as { slug?: string; name?: string }).slug;
-      const provCode = psgcCodeFromSlug(provSlug);
-      const munCode = psgcCodeFromSlug(munSlug);
+      const provCode = normalizePsgcCode(psgcCodeFromSlug(provSlug));
+      const munCode = normalizePsgcCode(psgcCodeFromSlug(munSlug));
 
       if (provCode && munCode) {
         setGeoProvCode(provCode);
@@ -376,7 +383,7 @@ export function ListingEditorPage() {
           const brgyId = String(row.barangay_id ?? "");
           if (brgyId) {
             const { data: br } = await supabase.from("barangays").select("slug").eq("id", brgyId).maybeSingle();
-            const brCode = psgcCodeFromSlug((br as { slug?: string } | null)?.slug);
+            const brCode = normalizePsgcCode(psgcCodeFromSlug((br as { slug?: string } | null)?.slug));
             if (brCode) {
               const brs = await fetchBarangays(munCode);
               setPsgcBrgys(brs);

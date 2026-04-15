@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ClientEditorSkeleton } from "../components/PageSkeletons";
+import { SearchableSelect } from "../components/SearchableSelect";
 import { supabase } from "../lib/supabaseClient";
 
 type Biz = {
@@ -269,6 +270,8 @@ export function PaymentAccountsPage() {
   const gcashQrDisplay = gcashLocalPreview ?? publicQrUrl(gcashQrPath);
   const mayaQrDisplay = mayaLocalPreview ?? publicQrUrl(mayaQrPath);
 
+  const bizOptions = useMemo(() => rows.map((b) => ({ value: b.id, label: b.name })), [rows]);
+
   if (!pageReady) return <ClientEditorSkeleton />;
 
   return (
@@ -307,18 +310,15 @@ export function PaymentAccountsPage() {
             <label className="ewallet-card__listing-label" htmlFor="ewallet-biz">
               Property
             </label>
-            <select
+            <SearchableSelect
               id="ewallet-biz"
-              className="ewallet-card__listing-select"
+              className="ewallet-card__listing-select searchable-select--ewallet"
               value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-            >
-              {rows.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+              onChange={setSelected}
+              options={bizOptions}
+              placeholder="Choose a property"
+              searchPlaceholder="Search properties…"
+            />
           </div>
 
           <p className="ewallet-card__hint">

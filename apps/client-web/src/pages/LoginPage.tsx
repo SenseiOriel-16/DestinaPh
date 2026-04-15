@@ -208,9 +208,7 @@ export function LoginPage() {
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
                 Remember me
               </label>
-              <a href="#forgot" onClick={(e) => e.preventDefault()}>
-                Forgot password?
-              </a>
+              <Link to="/forgot-password">Forgot password?</Link>
             </div>
             <button className="btn btn-primary" type="submit" disabled={busy}>
               {busy ? "Signing in…" : "Sign In"}

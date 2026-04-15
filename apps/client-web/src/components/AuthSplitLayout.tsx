@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 import authBg from "../../../Hibiscus-Camp.jpg";
 
 export type AuthSplitVariant = "client" | "admin";
@@ -17,6 +18,7 @@ function brandIconSrc(): string {
 }
 
 export function AuthSplitLayout({ children, variant, formScrollClassName }: Props) {
+  const location = useLocation();
   const isClient = variant === "client";
   return (
     <div className="auth-split">
@@ -57,7 +59,11 @@ export function AuthSplitLayout({ children, variant, formScrollClassName }: Prop
         </div>
       </aside>
       <div className="auth-split__form">
-        <div className={["auth-split__form-inner", formScrollClassName].filter(Boolean).join(" ")}>{children}</div>
+        <div className={["auth-split__form-inner", formScrollClassName].filter(Boolean).join(" ")}>
+          <div className="auth-route-surface ui-route-enter" key={location.pathname}>
+            {children}
+          </div>
+        </div>
       </div>
     </div>
   );

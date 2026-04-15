@@ -13,6 +13,11 @@ import { navigateToBookingsMain } from "../navigation/navRef";
 
 type NotifItem = BookingNotificationEvent & { read: boolean };
 
+export type BookingNotificationBellProps = {
+  /** `fab` = absolute top-right overlay (legacy). `inline` = sits in a header row (e.g. Home). */
+  variant?: "fab" | "inline";
+};
+
 function fmtTime(ts: number) {
   try {
     return new Date(ts).toLocaleString();
@@ -21,10 +26,11 @@ function fmtTime(ts: number) {
   }
 }
 
-export function BookingNotificationBell() {
+export function BookingNotificationBell({ variant = "fab" }: BookingNotificationBellProps) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotifItem[]>([]);
+  const isInline = variant === "inline";
 
   const unread = useMemo(() => items.reduce((n, it) => (it.read ? n : n + 1), 0), [items]);
 
@@ -40,18 +46,29 @@ export function BookingNotificationBell() {
     setItems((prev) => prev.map((it) => ({ ...it, read: true })));
   };
 
+  const panelTop = isInline
+    ? Math.max(insets.top, 18) + 56
+    : Math.max(insets.top, 10) + 54;
+
   return (
     <>
-      <View pointerEvents="box-none" style={[styles.fabWrap, { top: Math.max(insets.top, 10) + 6 }]}>
+      <View
+        pointerEvents="box-none"
+        style={isInline ? styles.inlineWrap : [styles.fabWrap, { top: Math.max(insets.top, 10) + 6 }]}
+      >
         <Pressable
           onPress={openPanel}
-          style={({ pressed }) => [styles.bellBtn, pressed && { transform: [{ scale: 0.98 }] }]}
+          style={({ pressed }) =>
+            isInline
+              ? [styles.inlineBell, pressed && styles.inlineBellPressed]
+              : [styles.bellBtn, pressed && { transform: [{ scale: 0.98 }] }]
+          }
           accessibilityRole="button"
           accessibilityLabel="Open notifications"
         >
-          <Ionicons name="notifications-outline" size={22} color={colors.white} />
+          <Ionicons name="notifications-outline" size={22} color={isInline ? colors.muted2 : colors.white} />
           {unread > 0 ? (
-            <View style={styles.badge}>
+            <View style={[styles.badge, isInline && styles.badgeInline]}>
               <Text style={styles.badgeText}>{unread > 99 ? "99+" : `${unread}`}</Text>
             </View>
           ) : null}
@@ -60,7 +77,7 @@ export function BookingNotificationBell() {
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.overlay} onPress={() => setOpen(false)} />
-        <View style={[styles.panel, { marginTop: Math.max(insets.top, 10) + 54 }]}>
+        <View style={[styles.panel, { marginTop: panelTop }]}>
           <View style={styles.panelHead}>
             <Text style={styles.panelTitle}>Notifications</Text>
             <Pressable onPress={() => setItems([])} accessibilityRole="button" accessibilityLabel="Clear notifications">
@@ -108,6 +125,22 @@ export function BookingNotificationBell() {
 }
 
 const styles = StyleSheet.create({
+  inlineWrap: {
+    flexShrink: 0,
+  },
+  inlineBell: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  inlineBellPressed: {
+    opacity: 0.92,
+  },
   fabWrap: {
     position: "absolute",
     right: 14,
@@ -141,6 +174,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 2,
     borderColor: "rgba(11,18,32,0.92)",
+  },
+  badgeInline: {
+    right: 6,
+    top: 6,
+    borderColor: colors.white,
   },
   badgeText: { color: "#fff", fontWeight: "900", fontSize: 10 },
   overlay: {

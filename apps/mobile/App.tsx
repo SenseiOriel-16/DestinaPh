@@ -5,6 +5,7 @@ import { ItineraryProvider } from "./src/context/ItineraryContext";
 import { SplashScreen } from "./src/screens/SplashScreen";
 import { WelcomeScreen } from "./src/screens/WelcomeScreen";
 import { WelcomeAuthScreen } from "./src/screens/WelcomeAuthScreen";
+import { ForgotPasswordScreen } from "./src/screens/ForgotPasswordScreen";
 import { InterestSelectScreen } from "./src/screens/InterestSelectScreen";
 import { MainTabs, type TabParamList } from "./src/navigation/MainTabs";
 import { navyStackHeader } from "./src/navigation/stackScreenOptions";
@@ -17,7 +18,6 @@ import { ReviewsScreen } from "./src/screens/ReviewsScreen";
 import { EditProfileScreen } from "./src/screens/EditProfileScreen";
 import { colors } from "./src/theme/colors";
 import { BookingStatusNotifier } from "./src/components/BookingStatusNotifier";
-import { BookingNotificationBell } from "./src/components/BookingNotificationBell";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DeviceEventEmitter } from "react-native";
@@ -29,6 +29,7 @@ export type RootStackParamList = {
   Splash: undefined;
   Welcome: undefined;
   WelcomeAuth: { mode: "signin" | "signup" };
+  ForgotPassword: undefined;
   InterestSelect: { intent?: "onboarding" | "edit" } | undefined;
   Main: NavigatorScreenParams<TabParamList> | undefined;
   DestinationMap: { title: string; destLat: number; destLng: number };
@@ -100,12 +101,7 @@ export default function App() {
           }}
         >
           <StatusBar style="light" />
-          {canShowNotifUi ? (
-            <>
-              <BookingStatusNotifier />
-              <BookingNotificationBell />
-            </>
-          ) : null}
+          {canShowNotifUi ? <BookingStatusNotifier /> : null}
           <TermsPrivacyModal
             visible={tpVisible}
             mustAccept={tpAccepted === false}
@@ -122,6 +118,7 @@ export default function App() {
             <Stack.Screen name="Splash" component={SplashScreen} />
             <Stack.Screen name="Welcome" component={WelcomeScreen} />
             <Stack.Screen name="WelcomeAuth" component={WelcomeAuthScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             <Stack.Screen name="InterestSelect" component={InterestSelectScreen} />
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen

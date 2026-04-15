@@ -1,5 +1,5 @@
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useCallback, useEffect, useState } from "react";
+import { NavLink, useLocation, useNavigate, useOutlet } from "react-router-dom";
+import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useState } from "react";
 import { OwnerMessageBell } from "../components/OwnerMessageBell";
 import { OwnerNotificationBell } from "../components/OwnerNotificationBell";
 import { SoundEnablePrompt } from "../components/SoundEnablePrompt";
@@ -49,6 +49,7 @@ function titleForPath(pathname: string): { title: string } {
 export function OwnerLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const outlet = useOutlet();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [businessName, setBusinessName] = useState("Your business");
   const [avatarLetter, setAvatarLetter] = useState("B");
@@ -131,6 +132,13 @@ export function OwnerLayout() {
   const start = new Date(today);
   start.setDate(start.getDate() - 6);
   const rangeStr = `${start.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${today.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+
+  const animatedOutlet = useMemo(() => {
+    if (!isValidElement(outlet)) return outlet;
+    const prev = outlet.props.className;
+    const merged = [typeof prev === "string" ? prev : "", "ui-route-enter"].filter(Boolean).join(" ");
+    return cloneElement(outlet, { key: location.pathname, className: merged });
+  }, [location.pathname, outlet]);
 
   return (
     <div className="owner-shell">
@@ -264,7 +272,7 @@ export function OwnerLayout() {
           </div>
         </header>
         <div className="owner-main__body">
-          <Outlet key={location.pathname} />
+          <div className="owner-page-stage">{animatedOutlet}</div>
         </div>
       </div>
     </div>

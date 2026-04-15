@@ -13,7 +13,16 @@ type Msg = {
   sender_role: "business_owner" | "admin";
   body: string;
   created_at: string;
+  edited_at: string | null;
 };
+
+const SUPPORT_MSG_EDIT_WINDOW_MS = 5 * 60 * 1000;
+
+function supportMessageWithinEditWindow(createdAtIso: string): boolean {
+  const t = new Date(createdAtIso).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t <= SUPPORT_MSG_EDIT_WINDOW_MS;
+}
 
 export function SupportPage() {
   const [conv, setConv] = useState<Conversation | null>(null);
@@ -22,6 +31,9 @@ export function SupportPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [meId, setMeId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const canSend = useMemo(() => Boolean(conv?.id) && draft.trim().length > 0 && !busy, [conv?.id, draft, busy]);
@@ -36,8 +48,6 @@ export function SupportPage() {
     setMeId(uid ?? null);
     if (!uid) return null;
 
-    // Don't use upsert here: if a conversation already exists, Supabase may perform an UPDATE,
-    // and our RLS intentionally limits updates to admins (owners shouldn't edit conversations).
     const { data: existing, error: selErr } = await supabase
       .from("support_conversations")
       .select("id,owner_id")
@@ -57,7 +67,6 @@ export function SupportPage() {
       .maybeSingle();
 
     if (insErr) {
-      // If another tab already created it (unique owner_id), just re-select.
       const { data: again, error: againErr } = await supabase
         .from("support_conversations")
         .select("id,owner_id")
@@ -73,7 +82,7 @@ export function SupportPage() {
   const loadMessages = useCallback(async (conversationId: string) => {
     const { data, error } = await supabase
       .from("support_messages")
-      .select("id,conversation_id,sender_id,sender_role,body,created_at")
+      .select("id,conversation_id,sender_id,sender_role,body,created_at,edited_at")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: true })
       .limit(200);
@@ -113,6 +122,26 @@ export function SupportPage() {
           window.setTimeout(scrollToBottom, 30);
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "support_messages", filter: `conversation_id=eq.${conv.id}` },
+        (payload) => {
+          const row = payload.new as Msg;
+          setRows((prev) => prev.map((m) => (m.id === row.id ? row : m)));
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "support_messages", filter: `conversation_id=eq.${conv.id}` },
+        (payload) => {
+          const oldRow = payload.old as { id?: string };
+          const id = oldRow?.id;
+          if (!id) return;
+          setRows((prev) => prev.filter((m) => m.id !== id));
+          setEditingId((e) => (e === id ? null : e));
+          setOpenMenuId((o) => (o === id ? null : o));
+        },
+      )
       .subscribe();
 
     return () => {
@@ -121,7 +150,24 @@ export function SupportPage() {
   }, [conv?.id]);
 
   useEffect(() => {
-    // Mark admin replies as read by owner when user is on this page.
+    if (!openMenuId) return;
+    const onDoc = (e: MouseEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest("[data-support-msg-menu]")) return;
+      setOpenMenuId(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenMenuId(null);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openMenuId]);
+
+  useEffect(() => {
     if (!conv?.id) return;
     void supabase
       .from("support_messages")
@@ -163,15 +209,91 @@ export function SupportPage() {
     }
   }, [conv?.id, draft]);
 
+  const startEdit = (m: Msg) => {
+    setOpenMenuId(null);
+    setEditingId(m.id);
+    setEditText(m.body);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditText("");
+    setOpenMenuId(null);
+  };
+
+  const saveEdit = async () => {
+    if (!editingId) return;
+    const target = rows.find((r) => r.id === editingId);
+    if (target && !supportMessageWithinEditWindow(target.created_at)) {
+      setErr("You can only edit a message within 5 minutes of sending.");
+      cancelEdit();
+      return;
+    }
+    const body = editText.trim();
+    if (!body) {
+      setErr("Message cannot be empty.");
+      return;
+    }
+    setErr(null);
+    const { error } = await supabase.from("support_messages").update({ body }).eq("id", editingId);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    cancelEdit();
+  };
+
+  const deleteMessage = async (id: string) => {
+    if (!window.confirm("Delete this message?")) return;
+    setErr(null);
+    const { error } = await supabase.from("support_messages").delete().eq("id", id);
+    if (error) setErr(error.message);
+  };
+
+  const deleteConversation = async () => {
+    if (!conv?.id) return;
+    if (
+      !window.confirm(
+        "Delete this entire conversation? All messages will be removed. You can start a new thread afterward.",
+      )
+    ) {
+      return;
+    }
+    setErr(null);
+    const { error } = await supabase.from("support_conversations").delete().eq("id", conv.id);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    setConv(null);
+    setRows([]);
+    setEditingId(null);
+    setEditText("");
+    const next = await ensureConversation();
+    setConv(next);
+    if (next?.id) await loadMessages(next.id);
+  };
+
   return (
     <div className="page page--wide support-page">
-      <header className="owner-reservations__hero" style={{ marginBottom: 18 }}>
+      <header className="owner-reservations__hero support-page__hero">
         <div className="owner-reservations__hero-text">
           <p className="owner-reservations__eyebrow">Support</p>
           <h1 className="owner-reservations__title">Contact support</h1>
           <p className="owner-reservations__lead">
             Message the DestinaPH admin team. You&apos;ll get a reply here.
           </p>
+          {conv?.id ? (
+            <div className="support-page__hero-actions">
+              <button
+                type="button"
+                className="btn btn-outline support-page__danger"
+                onClick={() => void deleteConversation()}
+              >
+                Delete conversation
+              </button>
+            </div>
+          ) : null}
         </div>
         <div className="owner-reservations__hero-art" aria-hidden />
       </header>
@@ -188,12 +310,86 @@ export function SupportPage() {
           ) : (
             rows.map((m) => {
               const mine = meId && m.sender_id === meId;
+              const canEdit = mine && supportMessageWithinEditWindow(m.created_at);
+              const canDelete = mine;
+              const isEditing = editingId === m.id;
+              const showMenu = !isEditing && (canEdit || canDelete);
               return (
                 <div key={m.id} className={["support-msg", mine ? "support-msg--mine" : ""].filter(Boolean).join(" ")}>
-                  <div className="support-msg__bubble">
-                    <div className="support-msg__text">{m.body}</div>
-                    <div className="support-msg__meta">
-                      {new Date(m.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  <div className={["support-msg__inner", mine ? "support-msg__inner--mine" : ""].filter(Boolean).join(" ")}>
+                    {showMenu ? (
+                      <div className="support-msg__menu-col" data-support-msg-menu>
+                        <button
+                          type="button"
+                          className="support-msg__menu-btn"
+                          aria-label="Message options"
+                          aria-expanded={openMenuId === m.id}
+                          aria-haspopup="true"
+                          onClick={() => setOpenMenuId((cur) => (cur === m.id ? null : m.id))}
+                        >
+                          <span className="support-msg__menu-dots" aria-hidden>
+                            ⋮
+                          </span>
+                        </button>
+                        {openMenuId === m.id ? (
+                          <div className="support-msg__menu" role="menu">
+                            {canEdit ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="support-msg__menu-item"
+                                onClick={() => startEdit(m)}
+                              >
+                                Edit
+                              </button>
+                            ) : null}
+                            {canDelete ? (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="support-msg__menu-item support-msg__menu-item--danger"
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  void deleteMessage(m.id);
+                                }}
+                              >
+                                Delete
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div className="support-msg__bubble">
+                      {isEditing ? (
+                        <div className="support-msg__edit">
+                          <textarea
+                            className="support-input support-msg__edit-input"
+                            rows={3}
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                          />
+                          <div className="support-msg__edit-actions">
+                            <button type="button" className="btn btn-primary btn-inline" onClick={() => void saveEdit()}>
+                              Save
+                            </button>
+                            <button type="button" className="btn btn-outline btn-inline" onClick={cancelEdit}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="support-msg__text">{m.body}</div>
+                      )}
+                      <div className="support-msg__meta">
+                        {new Date(m.created_at).toLocaleString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                        {m.edited_at ? <span className="support-msg__edited"> · Edited</span> : null}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -228,4 +424,3 @@ export function SupportPage() {
     </div>
   );
 }
-

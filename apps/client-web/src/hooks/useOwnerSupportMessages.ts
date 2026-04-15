@@ -115,6 +115,16 @@ export function useOwnerSupportMessages() {
           void load(conv.id);
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "support_messages", filter: `conversation_id=eq.${conv.id}` },
+        () => void load(conv.id),
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "support_messages", filter: `conversation_id=eq.${conv.id}` },
+        () => void load(conv.id),
+      )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);

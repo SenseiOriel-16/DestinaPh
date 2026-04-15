@@ -144,9 +144,6 @@ export function ExploreScreen({ navigation, route }: Props) {
             <Text style={styles.locText}>{locationLabel}</Text>
           </View>
         </View>
-        <Pressable style={styles.iconBtn} hitSlop={8}>
-          <Ionicons name="notifications-outline" size={22} color={colors.muted2} />
-        </Pressable>
       </View>
 
       <View style={styles.searchRow}>
@@ -282,14 +279,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: colors.text,
-  },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.pageBg,
   },
   searchRow: {
     flexDirection: "row",

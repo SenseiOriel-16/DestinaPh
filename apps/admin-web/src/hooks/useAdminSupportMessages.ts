@@ -74,6 +74,16 @@ export function useAdminSupportMessages() {
         if (bootRef.current) playNotificationSound();
         void load();
       })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "support_messages" }, (payload) => {
+        const row = payload.new as { sender_role?: string };
+        if (row.sender_role !== "business_owner") return;
+        void load();
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "support_messages" }, (payload) => {
+        const oldRow = payload.old as { sender_role?: string };
+        if (oldRow.sender_role !== "business_owner") return;
+        void load();
+      })
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);

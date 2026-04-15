@@ -10,7 +10,7 @@
     "ios": "expo run:ios",
     "icons:generate": "node scripts/generate-expo-icons.cjs",
     "sync:icon": "node ../../scripts/sync-system-icon.cjs",
-    "prebuild:android": "expo prebuild --platform android --clean --no-install"
+    "prebuild:android": "npm run icons:generate && expo prebuild --platform android --clean --no-install"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",
@@ -19,6 +19,7 @@
     "@react-navigation/bottom-tabs": "^6.6.1",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
+    "@react-native/virtualized-lists": "0.74.89",
     "@supabase/supabase-js": "^2.49.1",
     "base64-arraybuffer": "^1.0.2",
     "expo": "~51.0.39",

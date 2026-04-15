@@ -8,6 +8,7 @@ import { primeNotificationAudioFromUserGesture } from "../lib/notificationSound"
 
 const mainNav = [
   { to: "/", label: "Dashboard", icon: "\u25A4", end: true },
+  { to: "/users", label: "Users", icon: "\u{1F465}" },
   { to: "/listings", label: "Manage Clients", icon: "\u25CE" },
   { to: "/reports", label: "Analytics", icon: "\u{1F4CA}" },
   { to: "/support", label: "Support", icon: "\u{1F4AC}" },

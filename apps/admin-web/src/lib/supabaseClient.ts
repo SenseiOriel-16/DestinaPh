@@ -10,4 +10,31 @@ if (!url || !anon) {
   );
 }
 
-export const supabase = createClient(url ?? "", anon ?? "");
+function isInvalidStoredSessionError(err: unknown): boolean {
+  const msg =
+    typeof err === "object" && err && "message" in err && typeof (err as { message: unknown }).message === "string"
+      ? (err as { message: string }).message.toLowerCase()
+      : String(err).toLowerCase();
+  return (
+    msg.includes("invalid refresh token") ||
+    msg.includes("refresh token not found") ||
+    msg.includes("invalid jwt")
+  );
+}
+
+export const supabase = createClient(url ?? "", anon ?? "", {
+  auth: {
+    storageKey: "destinaph.admin-web.supabase.auth",
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+  },
+});
+
+// If the browser has a stale/corrupt refresh token (common after env/project changes),
+// clear local auth storage so the app doesn't keep trying to refresh it.
+void supabase.auth.getSession().then(({ error }) => {
+  if (error && isInvalidStoredSessionError(error)) {
+    void supabase.auth.signOut({ scope: "local" });
+  }
+});

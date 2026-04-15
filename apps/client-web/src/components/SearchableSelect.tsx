@@ -4,6 +4,8 @@ export type SearchableSelectOption = { value: string; label: string };
 
 export type SearchableSelectProps = {
   id: string;
+  /** Optional className for the root wrapper (useful for layout/width tweaks). */
+  className?: string;
   value: string;
   onChange: (value: string) => void;
   options: SearchableSelectOption[];
@@ -23,6 +25,7 @@ function normalize(s: string) {
 
 export function SearchableSelect({
   id,
+  className,
   value,
   onChange,
   options,
@@ -84,7 +87,10 @@ export function SearchableSelect({
   const showTriggerText = disabled ? placeholder : selectedLabel || placeholder;
 
   return (
-    <div ref={rootRef} className={`searchable-select${open ? " searchable-select--open" : ""}`}>
+    <div
+      ref={rootRef}
+      className={[`searchable-select${open ? " searchable-select--open" : ""}`, className].filter(Boolean).join(" ")}
+    >
       <button
         id={id}
         type="button"

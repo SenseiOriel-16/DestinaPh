@@ -37,6 +37,9 @@ const OwnerReservationsPage = lazy(() =>
 const SupportPage = lazy(() =>
   import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })),
 );
+const ForgotPasswordPage = lazy(() =>
+  import("./pages/ForgotPasswordPage").then((m) => ({ default: m.ForgotPasswordPage })),
+);
 
 function RouteFallback() {
   return <OwnerShellSkeleton />;
@@ -47,6 +50,7 @@ export default function App() {
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route element={<OwnerRoute />}>
           <Route element={<OwnerLayout />}>
