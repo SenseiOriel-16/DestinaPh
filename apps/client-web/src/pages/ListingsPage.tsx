@@ -45,6 +45,7 @@ export function ListingsPage() {
   const [initialLoad, setInitialLoad] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [tab, setTab] = useState<"all" | "approved" | "pending" | "rejected">("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [savingAccKey, setSavingAccKey] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -78,10 +79,32 @@ export function ListingsPage() {
     return { all, published, pending, rejected };
   }, [rows]);
 
+  const categoryOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      const slug = (r.categories?.slug ?? "").trim();
+      const name = (r.categories?.name ?? "").trim();
+      if (!slug || !name) continue;
+      map.set(slug, name);
+    }
+    const items = [...map.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    const hasUncategorized = rows.some((r) => !r.categories?.name);
+    return [
+      { value: "all", label: "All categories" },
+      ...(hasUncategorized ? [{ value: "__none__", label: "Uncategorized" }] : []),
+      ...items,
+    ];
+  }, [rows]);
+
   const filtered = useMemo(() => {
-    if (tab === "all") return rows;
-    return rows.filter((r) => r.status === tab);
-  }, [rows, tab]);
+    const byTab = tab === "all" ? rows : rows.filter((r) => r.status === tab);
+    if (categoryFilter === "all") return byTab;
+    if (categoryFilter === "__none__") return byTab.filter((r) => !r.categories?.name);
+    return byTab.filter((r) => (r.categories?.slug ?? "").trim() === categoryFilter);
+  }, [rows, tab, categoryFilter]);
 
   const remove = async (id: string) => {
     if (!confirm("Delete this listing?")) return;
@@ -167,6 +190,65 @@ export function ListingsPage() {
         >
           Rejected ({counts.rejected})
         </button>
+      </div>
+
+      <div
+        role="search"
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 12,
+          marginTop: -14,
+          marginBottom: 22,
+          flexWrap: "wrap",
+        }}
+      >
+        <label
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 12px",
+            borderRadius: 14,
+            border: "1px solid var(--border)",
+            background: "rgba(255, 255, 255, 0.75)",
+            boxShadow: "var(--shadow-card)",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "var(--muted)",
+            }}
+          >
+            Category
+          </span>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            aria-label="Filter listings by category"
+            style={{
+              border: "none",
+              background: "transparent",
+              fontWeight: 700,
+              fontSize: 14,
+              color: "var(--text)",
+              padding: "6px 6px",
+              borderRadius: 10,
+              cursor: "pointer",
+            }}
+          >
+            {categoryOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="listing-owner-cards">

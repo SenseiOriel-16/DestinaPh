@@ -281,45 +281,50 @@ export function HomeScreen({ navigation }: Props) {
                   onPress={() => navigation.navigate("Detail", { id: item.id })}
                   style={[styles.nearCard, { width: nearCardWidth }]}
                 >
-                  {uri ? (
-                    <Image source={{ uri }} style={styles.nearImg} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.nearImg, styles.destImgEmpty]}>
-                      <Ionicons name="image-outline" size={28} color={colors.muted2} />
-                    </View>
-                  )}
-                  <Text numberOfLines={2} style={styles.nearName}>
-                    {item.name}
-                  </Text>
-                  <View style={styles.nearMetaRow}>
-                    {distLabel ? (
-                      <View style={[styles.nearPill, styles.nearPillTeal]}>
-                        <Ionicons name="navigate-outline" size={13} color={colors.primaryTeal} />
-                        <Text style={[styles.nearPillText, styles.nearPillTextTeal]}>{distLabel}</Text>
+                  <View style={styles.nearImgWrap}>
+                    {uri ? (
+                      <Image source={{ uri }} style={styles.nearImg} resizeMode="cover" />
+                    ) : (
+                      <View style={[styles.nearImg, styles.destImgEmpty]}>
+                        <Ionicons name="image-outline" size={28} color={colors.muted2} />
                       </View>
-                    ) : null}
-                    <View style={[styles.nearPill, styles.nearPillStar]}>
+                    )}
+
+                    <View style={styles.nearRatingOverlay} pointerEvents="none">
                       {(() => {
                         const p = ratingParts(item.rating_average, item.rating_count);
                         if (p.kind === "new") {
-                          return <Text style={styles.nearPillText}>New</Text>;
+                          return <Text style={styles.nearOverlayText}>New</Text>;
                         }
                         return (
                           <>
-                            <Text style={styles.nearPillText}>{p.averageText}</Text>
+                            <Text style={styles.nearOverlayText}>{p.averageText}</Text>
                             <Ionicons name="star" size={13} color={colors.star} style={{ marginTop: 1 }} />
-                            <Text style={styles.nearPillText}>{p.countText}</Text>
+                            <Text style={styles.nearOverlayText}>
+                              {p.count} rating{p.count === 1 ? "" : "s"}
+                            </Text>
                           </>
                         );
                       })()}
                     </View>
                   </View>
+                  <Text numberOfLines={2} style={styles.nearName}>
+                    {item.name}
+                  </Text>
 
                   <View style={styles.nearMunRow}>
-                    <Ionicons name="location-outline" size={14} color={colors.muted2} />
-                    <Text numberOfLines={1} style={styles.nearMun}>
-                      {mun}
-                    </Text>
+                    <View style={styles.nearMunLeft}>
+                      <Ionicons name="location-outline" size={14} color={colors.muted2} />
+                      <Text numberOfLines={1} style={styles.nearMun}>
+                        {mun}
+                      </Text>
+                    </View>
+                    {distLabel ? (
+                      <View style={styles.nearDistancePill}>
+                        <Ionicons name="navigate-outline" size={13} color={colors.primaryTeal} />
+                        <Text style={styles.nearDistanceText}>{distLabel}</Text>
+                      </View>
+                    ) : null}
                   </View>
                 </Pressable>
               );
@@ -514,6 +519,28 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.border,
   },
+  nearImgWrap: {
+    position: "relative",
+  },
+  nearRatingOverlay: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.78)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.60)",
+  },
+  nearOverlayText: {
+    fontSize: 12.5,
+    fontWeight: "800",
+    color: colors.navy,
+  },
   nearName: {
     marginTop: 10,
     fontSize: 16,
@@ -557,14 +584,37 @@ const styles = StyleSheet.create({
   nearMunRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "space-between",
     marginTop: 10,
+  },
+  nearMunLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    paddingRight: 10,
   },
   nearMun: {
     flex: 1,
     fontSize: 13,
     fontWeight: "600",
     color: colors.muted2,
+  },
+  nearDistancePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(8,143,143,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(8,143,143,0.18)",
+  },
+  nearDistanceText: {
+    fontSize: 12.5,
+    fontWeight: "800",
+    color: colors.primaryTeal,
   },
   nearCost: { marginTop: 8, fontSize: 12.5, fontWeight: "800", color: colors.navy },
 });

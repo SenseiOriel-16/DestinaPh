@@ -444,6 +444,40 @@ textarea {
   gap: 12px;
 }
 
+.chat-composer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-composer__upload {
+  white-space: nowrap;
+}
+
+.chat-composer__input {
+  flex: 1;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 600;
+  outline: none;
+  background: #fff;
+}
+
+.chat-composer__input::placeholder {
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.chat-composer__input:focus {
+  box-shadow: var(--focus-ring);
+  border-color: rgba(8, 143, 143, 0.4);
+}
+
 .support-hint {
   color: var(--muted);
   font-weight: 600;

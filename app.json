@@ -1,10 +1,6 @@
 {
   "expo": {
-    "extra": {
-      "eas": {
-        "projectId": "45a4f3b4-77ee-4783-b96b-d1b3e8331598"
-      }
-    },
+    "extra": {},
     "android": {
       "package": "com.oscarllabres08.destinaph"
     }

@@ -4,14 +4,17 @@ import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { CompositeScreenProps, useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FlashNotice } from "../components/FlashNotice";
 import {
   Alert,
+  Animated,
+  Easing,
   FlatList,
   Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,11 +30,14 @@ import { formatBusinessAddress, sortedPhotoPublicUrls } from "../lib/businessDis
 import { ratingParts, formatRatingSubtitle } from "../lib/businessRatingDisplay";
 import { supabase } from "../lib/supabase";
 import { trackListingIntentVisit } from "../lib/trackListingMetric";
+import { shadowCompat } from "../lib/rnWebStyleCompat";
 import { colors } from "../theme/colors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MapPinPreview } from "../components/MapPinPreview";
 import { openGoogleMapsDirections, openTurnByTurnNavigation } from "../lib/mapExternal";
 import { recordVisitIntentAndStartConfirmation } from "../lib/visitConfirmation";
+import { CHAT_OPEN_EVENT } from "../components/ChatOverlay";
+import { DeviceEventEmitter } from "react-native";
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<HomeStackParamList, "Detail">,
@@ -53,6 +59,11 @@ type BusinessRow = {
   entrance_fee_night_pesos: number | null;
   operating_day: boolean | null;
   operating_night: boolean | null;
+  operating_hours_always_open?: boolean | null;
+  operating_open_hour?: number | null;
+  operating_open_meridiem?: string | null;
+  operating_close_hour?: number | null;
+  operating_close_meridiem?: string | null;
   pricing_text: string | null;
   municipalities: { name: string } | null;
   provinces: { name: string } | null;
@@ -60,6 +71,27 @@ type BusinessRow = {
   categories: { name: string } | null;
   business_photos: { storage_path: string; sort_order: number }[] | null;
 };
+
+function operatingHoursLine(row: BusinessRow): string | null {
+  if (row.operating_hours_always_open === true) return "Always Open";
+  const oh = row.operating_open_hour;
+  const om = row.operating_open_meridiem;
+  const ch = row.operating_close_hour;
+  const cm = row.operating_close_meridiem;
+  if (
+    typeof oh === "number" &&
+    typeof ch === "number" &&
+    (om === "AM" || om === "PM") &&
+    (cm === "AM" || cm === "PM") &&
+    oh >= 1 &&
+    oh <= 12 &&
+    ch >= 1 &&
+    ch <= 12
+  ) {
+    return `${oh} ${om} to ${ch} ${cm}`;
+  }
+  return null;
+}
 
 function entranceSummary(row: BusinessRow): string | null {
   const parts: string[] = [];
@@ -96,6 +128,8 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const { width: screenW } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
+  const reserveCtaPulse = useRef(new Animated.Value(1)).current;
+  const useNativeDriver = Platform.OS !== "web";
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tagline, setTagline] = useState<string | null>(null);
@@ -113,6 +147,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const [accommodationsOpen, setAccommodationsOpen] = useState(false);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [entranceLine, setEntranceLine] = useState<string | null>(null);
+  const [opHours, setOpHours] = useState<string | null>(null);
   const [estimatedCost, setEstimatedCost] = useState<string | null>(null);
   const [bestTimes, setBestTimes] = useState<string[]>([]);
   const [accommodations, setAccommodations] = useState<AccommodationItem[]>([]);
@@ -125,6 +160,27 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const [ratingBusy, setRatingBusy] = useState(false);
   const [actionFlash, setActionFlash] = useState<string | null>(null);
   const clearActionFlash = useCallback(() => setActionFlash(null), []);
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(reserveCtaPulse, {
+          toValue: 1.03,
+          duration: 900,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver,
+        }),
+        Animated.timing(reserveCtaPulse, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver,
+        }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [reserveCtaPulse, useNativeDriver]);
 
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false });
@@ -156,6 +212,11 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           entrance_fee_night_pesos,
           operating_day,
           operating_night,
+          operating_hours_always_open,
+          operating_open_hour,
+          operating_open_meridiem,
+          operating_close_hour,
+          operating_close_meridiem,
           pricing_text,
           estimated_cost_min_pesos,
           estimated_cost_max_pesos,
@@ -205,6 +266,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         setLng(row.longitude);
         setImages(sortedPhotoPublicUrls(row.business_photos).slice(0, 5));
         setEntranceLine(entranceSummary(row));
+        setOpHours(operatingHoursLine(row));
         const cmin = (row as any).estimated_cost_min_pesos;
         const cmax = (row as any).estimated_cost_max_pesos;
         if (typeof cmin === "number" && typeof cmax === "number" && cmin >= 0 && cmax >= cmin) {
@@ -218,6 +280,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
       } else {
         setImages([]);
         setEntranceLine(null);
+        setOpHours(null);
         setEstimatedCost(null);
         setBestTimes([]);
         setAccommodations([]);
@@ -501,18 +564,27 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
             <Pressable style={styles.heroIconBtn} onPress={() => navigation.goBack()} accessibilityLabel="Go back">
               <Ionicons name="chevron-back" size={24} color={colors.navy} />
             </Pressable>
-            <Pressable
-              style={styles.heroIconBtn}
-              onPress={() => void toggleFavorite()}
-              disabled={favoriteBusy}
-              accessibilityLabel={favorited ? "Remove favorite" : "Add favorite"}
-            >
-              <Ionicons
-                name={favorited ? "heart" : "heart-outline"}
-                size={22}
-                color={favorited ? colors.danger : colors.navy}
-              />
-            </Pressable>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <Pressable
+                style={styles.heroIconBtn}
+                onPress={() => DeviceEventEmitter.emit(CHAT_OPEN_EVENT, { businessId: id })}
+                accessibilityLabel="Message business"
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.navy} />
+              </Pressable>
+              <Pressable
+                style={styles.heroIconBtn}
+                onPress={() => void toggleFavorite()}
+                disabled={favoriteBusy}
+                accessibilityLabel={favorited ? "Remove favorite" : "Add favorite"}
+              >
+                <Ionicons
+                  name={favorited ? "heart" : "heart-outline"}
+                  size={22}
+                  color={favorited ? colors.danger : colors.navy}
+                />
+              </Pressable>
+            </View>
           </View>
 
           {images.length > 0 ? (
@@ -631,34 +703,61 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
             </Text>
           </View>
 
-          {entranceLine ? (
-            <View style={styles.entranceBox}>
-              <View style={styles.entranceHeader}>
-                <Ionicons name="pricetag-outline" size={18} color={colors.primaryTeal} />
-                <Text style={styles.entranceTitle}>Entrance & fees</Text>
-              </View>
-              <Text style={styles.entranceText}>{entranceLine}</Text>
-            </View>
-          ) : null}
+          {(() => {
+            const cat = (categoryName ?? "").toLowerCase();
+            const isFood = cat.includes("food");
+            const isResort = cat.includes("resort");
 
-          {estimatedCost ? (
-            <View style={styles.entranceBox}>
-              <View style={styles.entranceHeader}>
-                <Ionicons name="cash-outline" size={18} color={colors.primaryTeal} />
-                <Text style={styles.entranceTitle}>Estimated cost</Text>
-              </View>
-              <Text style={styles.entranceText}>{estimatedCost}</Text>
-              {bestTimes.length ? (
-                <View style={styles.bestTimesRow}>
-                  {bestTimes.slice(0, 3).map((t) => (
-                    <View key={t} style={styles.bestTimeChip}>
-                      <Text style={styles.bestTimeChipTxt}>{t}</Text>
+            // Requirement:
+            // - Food: show only "Estimated cost"
+            // - Resort: show only "Entrance & fees"
+            // Fallback: for other categories, show whatever is available.
+            const showEntrance = isResort ? true : isFood ? false : Boolean(entranceLine);
+            const showEstimated = isFood ? true : isResort ? false : Boolean(estimatedCost);
+
+            return (
+              <>
+                {showEntrance && entranceLine ? (
+                  <View style={styles.entranceBox}>
+                    <View style={styles.entranceHeader}>
+                      <Ionicons name="pricetag-outline" size={18} color={colors.primaryTeal} />
+                      <Text style={styles.entranceTitle}>Entrance & fees</Text>
                     </View>
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          ) : null}
+                    <Text style={styles.entranceText}>{entranceLine}</Text>
+                  </View>
+                ) : null}
+
+                {opHours ? (
+                  <View style={styles.entranceBox}>
+                    <View style={styles.entranceHeader}>
+                      <Ionicons name="time-outline" size={18} color={colors.primaryTeal} />
+                      <Text style={styles.entranceTitle}>Operating Hours</Text>
+                    </View>
+                    <Text style={styles.entranceText}>{opHours}</Text>
+                  </View>
+                ) : null}
+
+                {showEstimated && estimatedCost ? (
+                  <View style={styles.entranceBox}>
+                    <View style={styles.entranceHeader}>
+                      <Ionicons name="cash-outline" size={18} color={colors.primaryTeal} />
+                      <Text style={styles.entranceTitle}>Estimated cost</Text>
+                    </View>
+                    <Text style={styles.entranceText}>{estimatedCost}</Text>
+                    {bestTimes.length ? (
+                      <View style={styles.bestTimesRow}>
+                        {bestTimes.slice(0, 3).map((t) => (
+                          <View key={t} style={styles.bestTimeChip}>
+                            <Text style={styles.bestTimeChipTxt}>{t}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </>
+            );
+          })()}
 
           {tagline ? <Text style={styles.tagline}>{tagline}</Text> : null}
 
@@ -815,15 +914,26 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           )}
 
           <Pressable
-            style={[styles.ctaSecondary, !allowRes && { opacity: 0.55 }]}
+            accessibilityRole="button"
+            accessibilityLabel={allowRes ? "Reserve now" : "Reservations disabled"}
             disabled={!allowRes}
+            hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
+            style={({ pressed }) => [
+              styles.reserveCtaWrap,
+              !allowRes && { opacity: 0.55 },
+              pressed && { opacity: 0.9 },
+            ]}
             onPress={() => {
               if (!allowRes) return;
               trackListingIntentVisit(id);
               navigation.navigate("BookingRequest", { businessId: id });
             }}
           >
-            <Text style={styles.ctaSecondaryText}>{allowRes ? "Reserve now" : "Reservations disabled"}</Text>
+            <Animated.View style={[styles.reserveCta, { transform: [{ scale: reserveCtaPulse }] }]}>
+              <Text style={styles.reserveCtaText}>
+                {allowRes ? "Reserve now" : "Reservations disabled"}
+              </Text>
+            </Animated.View>
           </Pressable>
         </View>
     </ScrollView>
@@ -1085,14 +1195,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   ctaText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  ctaSecondary: {
+  reserveCtaWrap: {
     marginTop: 12,
-    backgroundColor: colors.white,
-    paddingVertical: 14,
-    borderRadius: 16,
+    alignSelf: "stretch",
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: colors.primaryTeal,
   },
-  ctaSecondaryText: { color: colors.primaryTeal, fontWeight: "800", fontSize: 16 },
+  reserveCta: {
+    width: "100%",
+    backgroundColor: colors.primaryTeal,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.35)",
+    alignItems: "center",
+    ...shadowCompat({ opacity: 0.35, radius: 5, offsetY: 3, elevation: 6 }),
+  },
+  reserveCtaText: {
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 15,
+    letterSpacing: 0.3,
+  },
 });

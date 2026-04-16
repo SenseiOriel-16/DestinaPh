@@ -6,6 +6,7 @@ const RESERVATIONS_REFRESH_EVENT = "destinaph-owner-reservations-refresh";
 
 type BusinessLite = {
   name: string | null;
+  categories?: { slug: string; name: string } | null;
 };
 
 type Row = {
@@ -15,6 +16,7 @@ type Row = {
   accommodation_name: string | null;
   check_in: string | null;
   check_out: string | null;
+  arrival_time: string | null;
   guest_count: number | null;
   estimated_total_pesos: number | null;
   downpayment_pesos: number | null;
@@ -46,6 +48,7 @@ export function OwnerReservationsPage() {
   const [rejectModal, setRejectModal] = useState<{ open: boolean; id: string; title: string } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [filter, setFilter] = useState<"all" | "needs_review" | "confirmed" | "cancelled">("needs_review");
+  const [category, setCategory] = useState<"all" | "food-dining" | "resorts-leisure" | "nature-adventure">("all");
   const [bizIds, setBizIds] = useState<string[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(() => {
     try {
@@ -97,7 +100,7 @@ export function OwnerReservationsPage() {
     const { data, error } = await supabase
       .from("bookings")
       .select(
-        "id,status,requested_at,accommodation_name,check_in,check_out,guest_count,estimated_total_pesos,downpayment_pesos,payment_method,payment_reference,payment_proof_storage_path,notes,owner_note,business_id,businesses(name)",
+        "id,status,requested_at,accommodation_name,check_in,check_out,arrival_time,guest_count,estimated_total_pesos,downpayment_pesos,payment_method,payment_reference,payment_proof_storage_path,notes,owner_note,business_id,businesses(name,categories(slug,name))",
       )
       .in("business_id", bizIds)
       .order("requested_at", { ascending: false });
@@ -200,11 +203,17 @@ export function OwnerReservationsPage() {
   }, [rows, readIds]);
 
   const filtered = useMemo(() => {
-    if (filter === "needs_review") return rows.filter((r) => needsHostAction(r.status));
-    if (filter === "confirmed") return rows.filter((r) => r.status === "confirmed");
-    if (filter === "cancelled") return rows.filter((r) => r.status === "cancelled");
-    return rows;
-  }, [rows, filter]);
+    const base =
+      filter === "needs_review"
+        ? rows.filter((r) => needsHostAction(r.status))
+        : filter === "confirmed"
+          ? rows.filter((r) => r.status === "confirmed")
+          : filter === "cancelled"
+            ? rows.filter((r) => r.status === "cancelled")
+            : rows;
+    if (category === "all") return base;
+    return base.filter((r) => (r.businesses?.categories?.slug ?? "") === category);
+  }, [rows, filter, category]);
 
   const setStatus = async (id: string, status: "confirmed" | "cancelled") => {
     if (status === "cancelled") {
@@ -501,6 +510,36 @@ export function OwnerReservationsPage() {
                 Cancelled
               </button>
             </div>
+            <div className="owner-reservations__filters" role="tablist" aria-label="Category filters">
+              <button
+                type="button"
+                className={`owner-reservations__tab${category === "all" ? " is-active" : ""}`}
+                onClick={() => setCategory("all")}
+              >
+                All categories
+              </button>
+              <button
+                type="button"
+                className={`owner-reservations__tab${category === "food-dining" ? " is-active" : ""}`}
+                onClick={() => setCategory("food-dining")}
+              >
+                Food
+              </button>
+              <button
+                type="button"
+                className={`owner-reservations__tab${category === "resorts-leisure" ? " is-active" : ""}`}
+                onClick={() => setCategory("resorts-leisure")}
+              >
+                Resort
+              </button>
+              <button
+                type="button"
+                className={`owner-reservations__tab${category === "nature-adventure" ? " is-active" : ""}`}
+                onClick={() => setCategory("nature-adventure")}
+              >
+                Nature
+              </button>
+            </div>
           </div>
 
           <div className="owner-reservations__table-wrap">
@@ -508,10 +547,10 @@ export function OwnerReservationsPage() {
             <thead>
               <tr>
                 <th>Property</th>
-                <th>Stay</th>
-                <th>Guest / room</th>
-                <th>Guest payment</th>
+                <th>Visit date</th>
+                <th>Visit time</th>
                 <th>Requested</th>
+                <th>Payment method</th>
                 <th>Proof</th>
                 <th>Actions</th>
               </tr>
@@ -524,27 +563,25 @@ export function OwnerReservationsPage() {
                   <td className="owner-reservations__cell-title" data-label="Property">
                     {r.businesses?.name ?? "—"}
                   </td>
-                  <td data-label="Stay">
-                    <div className="owner-reservations__cell-muted">
-                      {r.check_in && r.check_out ? `${r.check_in} → ${r.check_out}` : "—"}
-                    </div>
+                  <td data-label="Visit date">
+                    <div className="owner-reservations__cell-muted">{r.check_in ?? "—"}</div>
+                    <div className="owner-reservations__cell-note">Guests: {r.guest_count ?? "—"}</div>
+                  </td>
+                  <td data-label="Visit time">
+                    <div className="owner-reservations__cell-muted">{r.arrival_time ?? "—"}</div>
                     <div className="owner-reservations__cell-note">
                       Est. {peso(r.estimated_total_pesos)} · Down {peso(r.downpayment_pesos)}
-                    </div>
-                  </td>
-                  <td data-label="Guest / room">
-                    <div className="owner-reservations__cell-muted">{r.guest_count ?? "—"} guests</div>
-                    <div className="owner-reservations__cell-note">{r.accommodation_name ?? "—"}</div>
-                  </td>
-                  <td data-label="Guest payment">
-                    <div className="owner-reservations__cell-muted">{(r.payment_method ?? "—").toUpperCase()}</div>
-                    <div className="owner-reservations__cell-note" style={{ wordBreak: "break-all" }}>
-                      {r.payment_reference ?? "—"}
                     </div>
                   </td>
                   <td data-label="Requested">
                     <div className="owner-reservations__cell-muted">
                       {new Date(r.requested_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}
+                    </div>
+                  </td>
+                  <td data-label="Payment method">
+                    <div className="owner-reservations__cell-muted">{(r.payment_method ?? "—").toUpperCase()}</div>
+                    <div className="owner-reservations__cell-note" style={{ wordBreak: "break-all" }}>
+                      {r.payment_reference ?? "—"}
                     </div>
                   </td>
                   <td data-label="Proof">

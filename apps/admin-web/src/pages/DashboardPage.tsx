@@ -13,7 +13,23 @@ import { AdminDashboardSkeleton } from "../components/PageSkeletons";
 import { supabase } from "../lib/supabaseClient";
 
 type Stat = { clients: number; businesses: number; pending: number; destinations: number };
-type Recent = { id: string; name: string; status: string; created_at: string };
+type BusinessPhoto = { storage_path: string; sort_order: number };
+type Recent = {
+  id: string;
+  name: string;
+  status: string;
+  created_at: string;
+  business_photos: BusinessPhoto[] | null;
+};
+
+function recentThumbUrl(r: Recent): string | null {
+  const photos = [...(r.business_photos ?? [])].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
+  );
+  const path = photos[0]?.storage_path;
+  if (!path) return null;
+  return supabase.storage.from("business-images").getPublicUrl(path).data.publicUrl;
+}
 
 function lastNDaysLabels(n: number): string[] {
   const out: string[] = [];
@@ -112,7 +128,7 @@ export function DashboardPage() {
           supabase.from("businesses").select("created_at").gte("created_at", sinceIso),
           supabase
             .from("businesses")
-            .select("id,name,status,created_at")
+            .select("id,name,status,created_at,business_photos(storage_path,sort_order)")
             .order("created_at", { ascending: false })
             .limit(6),
         ]);
@@ -269,12 +285,24 @@ export function DashboardPage() {
           <div style={{ marginTop: 12 }}>
             {recent.map((r, i) => (
               <div key={r.id} className="recent-row">
-                <div
-                  className="recent-avatar"
-                  style={{ background: avatarColors[i % avatarColors.length] }}
-                >
-                  {r.name.slice(0, 1).toUpperCase()}
-                </div>
+                {(() => {
+                  const thumb = recentThumbUrl(r);
+                  if (thumb) {
+                    return (
+                      <div className="recent-avatar recent-avatar--img" aria-hidden>
+                        <img src={thumb} alt="" loading="lazy" />
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      className="recent-avatar"
+                      style={{ background: avatarColors[i % avatarColors.length] }}
+                    >
+                      {r.name.slice(0, 1).toUpperCase()}
+                    </div>
+                  );
+                })()}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{r.name}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>

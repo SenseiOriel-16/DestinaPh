@@ -490,9 +490,11 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
       }
 
       const accName =
-        selectedAccIndex != null && accommodations[selectedAccIndex]?.name?.trim()
-          ? accommodations[selectedAccIndex].name.trim()
-          : "General";
+        isFood
+          ? null
+          : selectedAccIndex != null && accommodations[selectedAccIndex]?.name?.trim()
+            ? accommodations[selectedAccIndex].name.trim()
+            : "General";
 
       const { error } = await supabase.from("bookings").insert({
         id: bookingId,
@@ -542,7 +544,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
     const parent: any = (navigation as any).getParent?.();
     try {
       if (parent?.navigate) {
-        parent.navigate("Bookings", { screen: "BookingsMain" });
+        parent.navigate("Bookings", { screen: "BookingsMain", params: { initialTab: "upcoming" } });
         return;
       }
     } catch {
@@ -550,7 +552,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
     }
     // Fallback: if we're already inside the Bookings stack.
     try {
-      (navigation as any).navigate("BookingsMain");
+      (navigation as any).navigate("BookingsMain", { initialTab: "upcoming" });
     } catch {
       navigation.goBack();
     }
@@ -640,7 +642,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
           />
         </GlassPanel>
 
-      {availableAccs.length > 0 ? (
+      {!isFood && availableAccs.length > 0 ? (
         <GlassPanel style={styles.card} contentStyle={styles.cardInner}>
           <View style={styles.cardTitleRow}>
             <Ionicons name="bed-outline" size={20} color={colors.navy} />
@@ -716,9 +718,9 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
             </View>
           </Modal>
         </GlassPanel>
-      ) : (
+      ) : !isFood ? (
         <Text style={styles.warn}>No accommodation types listed — select dates and guests only.</Text>
-      )}
+      ) : null}
 
       <GlassPanel style={styles.card} contentStyle={styles.cardInner}>
         <View style={styles.cardTitleRow}>

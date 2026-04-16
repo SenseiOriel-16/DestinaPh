@@ -2,9 +2,9 @@ import { NavLink, useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useState } from "react";
 import { OwnerMessageBell } from "../components/OwnerMessageBell";
 import { OwnerNotificationBell } from "../components/OwnerNotificationBell";
-import { SoundEnablePrompt } from "../components/SoundEnablePrompt";
 import { supabase } from "../lib/supabaseClient";
 import { primeNotificationAudioFromUserGesture } from "../lib/notificationSound";
+import { useLastSeenPing } from "../hooks/useLastSeenPing";
 
 const OWNER_THEME_KEY = "destinaph_owner_dark";
 
@@ -12,6 +12,7 @@ const mainNav = [
   { to: "/", label: "Dashboard", icon: "\u25A4", end: true },
   { to: "/listings", label: "Manage Listings", icon: "\u25CE" },
   { to: "/reservations", label: "Reservations", icon: "\u{1F4C5}" },
+  { to: "/messages", label: "Messages", icon: "\u{1F4AC}" },
   { to: "/analytics", label: "Analytics", icon: "\u{1F4CA}" },
 ];
 
@@ -24,6 +25,9 @@ function titleForPath(pathname: string): { title: string } {
   }
   if (pathname === "/reservations") {
     return { title: "Reservations" };
+  }
+  if (pathname === "/messages") {
+    return { title: "Messages" };
   }
   if (pathname === "/listings/new") {
     return { title: "Add New Listing" };
@@ -47,6 +51,7 @@ function titleForPath(pathname: string): { title: string } {
 }
 
 export function OwnerLayout() {
+  useLastSeenPing();
   const navigate = useNavigate();
   const location = useLocation();
   const outlet = useOutlet();
@@ -142,7 +147,6 @@ export function OwnerLayout() {
 
   return (
     <div className="owner-shell">
-      <SoundEnablePrompt />
       {sidebarOpen && (
         <button
           type="button"

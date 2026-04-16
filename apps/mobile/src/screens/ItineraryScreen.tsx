@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
@@ -174,13 +174,11 @@ function CategoryCard({
 function BudgetChip({
   active,
   label,
-  emoji,
   gradient,
   onPress,
 }: {
   active: boolean;
   label: string;
-  emoji: string;
   gradient: [string, string];
   onPress: () => void;
 }) {
@@ -200,7 +198,6 @@ function BudgetChip({
           end={{ x: 1, y: 1 }}
           style={[styles.budgetChip, active && styles.budgetChipActive]}
         >
-          <Text style={styles.budgetChipEmoji}>{emoji}</Text>
           <Text style={[styles.budgetChipTxt, active && styles.budgetChipTxtActive]}>
             {label}
           </Text>
@@ -230,7 +227,7 @@ function PriorityChip({
   };
 
   const prioMeta: Record<PriorityKey, { icon: keyof typeof Ionicons.glyphMap; label: string; color: string }> = {
-    distance: { icon: "navigate", label: "Distance", color: colors.primaryTealDeep },
+    distance: { icon: "location", label: "Distance", color: "#EF4444" },
     popularity: { icon: "star", label: "Popularity", color: colors.star },
     budget: { icon: "cash", label: "Budget", color: colors.accentGreen },
   };
@@ -258,6 +255,57 @@ function PriorityChip({
         </View>
       </Animated.View>
     </Pressable>
+  );
+}
+
+function PriorityRow({
+  rank,
+  value,
+  onSelect,
+}: {
+  rank: 1 | 2 | 3;
+  value: PriorityKey;
+  onSelect: (k: PriorityKey) => void;
+}) {
+  const opts: { key: PriorityKey; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
+    { key: "popularity", label: "Popularity", icon: "star", color: colors.star },
+    { key: "budget", label: "Budget", icon: "cash", color: colors.accentGreen },
+    { key: "distance", label: "Distance", icon: "location", color: "#EF4444" },
+  ];
+
+  const rankLabel = rank === 1 ? "1st priority" : rank === 2 ? "2nd priority" : "3rd priority";
+
+  return (
+    <View style={styles.prioRow2}>
+      <Text style={styles.prioRowLabel}>{rankLabel}</Text>
+      <View style={styles.prioSeg}>
+        {opts.map((o, idx) => {
+          const active = value === o.key;
+          return (
+            <Pressable
+              key={o.key}
+              onPress={() => onSelect(o.key)}
+              style={({ pressed }) => [
+                styles.prioSegBtn,
+                idx === 0 && styles.prioSegBtnFirst,
+                idx === opts.length - 1 && styles.prioSegBtnLast,
+                active && styles.prioSegBtnActive,
+                pressed && { opacity: 0.92 },
+              ]}
+            >
+              <Ionicons
+                name={o.icon}
+                size={14}
+                color={active ? o.color : "rgba(71,85,105,0.75)"}
+              />
+              <Text style={[styles.prioSegTxt, active && styles.prioSegTxtActive]}>
+                {o.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -317,6 +365,7 @@ export function ItineraryScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { stops, setStops } = useItinerary();
   const [view, setView] = useState<"form" | "loading" | "results">("form");
+  const scrollRef = useRef<ScrollView | null>(null);
   const [municipalities, setMunicipalities] = useState<{ id: string; name: string }[]>([]);
   const [municipalityId, setMunicipalityId] = useState<string>("");
   const [categorySlug, setCategorySlug] = useState<string>("resorts-leisure");
@@ -394,6 +443,12 @@ export function ItineraryScreen({ navigation }: any) {
     void loadMunicipalities();
   }, [loadMunicipalities]);
 
+  useEffect(() => {
+    // When switching views, keep the user at the top of the sheet so it feels like a "redirect"
+    // to the Generated Results section (especially after tapping Generate at the bottom).
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [view]);
+
   const generate = useCallback(async () => {
     if (!municipalityId) {
       Alert.alert("Missing municipality", "Please select a municipality first.");
@@ -405,16 +460,6 @@ export function ItineraryScreen({ navigation }: any) {
 
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
-      if (perm.status !== "granted") {
-        Alert.alert("Location required", "Please allow location access to generate an itinerary.");
-        setView("form");
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const origin = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-
       const { data, error } = await supabase
         .from("businesses")
         .select(
@@ -466,6 +511,41 @@ export function ItineraryScreen({ navigation }: any) {
               (c) => String((c as any).subcategory ?? "") === natureSubcategory,
             )
           : candidates;
+
+      // Resolve origin: prefer current GPS; fallback to last known; final fallback to
+      // centroid of candidate destinations (so generation still works even if GPS fails).
+      let origin: { latitude: number; longitude: number } | null = null;
+      if (perm.status === "granted") {
+        try {
+          const pos = await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("Location timeout")), 9000),
+            ),
+          ]);
+          origin = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        } catch {
+          try {
+            const last = await Location.getLastKnownPositionAsync();
+            if (last?.coords?.latitude != null && last?.coords?.longitude != null) {
+              origin = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (!origin) {
+        const pts = narrowedCandidates.filter((c) => typeof c.latitude === "number" && typeof c.longitude === "number");
+        if (pts.length) {
+          const lat = pts.reduce((s, p) => s + (p.latitude ?? 0), 0) / pts.length;
+          const lng = pts.reduce((s, p) => s + (p.longitude ?? 0), 0) / pts.length;
+          origin = { latitude: lat, longitude: lng };
+        } else {
+          origin = { latitude: 13.0, longitude: 122.0 }; // PH-ish fallback; should be rare
+        }
+      }
 
       const prefs = {
         origin,
@@ -983,16 +1063,15 @@ export function ItineraryScreen({ navigation }: any) {
       />
       <View style={styles.budgetRow}>
         {[
-          { val: 50, emoji: "💙", grad: ["#BFDBFE", "#93C5FD"] as [string, string] },
-          { val: 100, emoji: "💚", grad: ["#BBF7D0", "#86EFAC"] as [string, string] },
-          { val: 150, emoji: "🧡", grad: ["#FED7AA", "#FDBA74"] as [string, string] },
-          { val: 200, emoji: "💚", grad: ["#A7F3D0", "#5EEAD4"] as [string, string] },
-        ].map(({ val, emoji, grad }) => (
+          { val: 50, grad: ["#BFDBFE", "#93C5FD"] as [string, string] },
+          { val: 100, grad: ["#BBF7D0", "#86EFAC"] as [string, string] },
+          { val: 150, grad: ["#FED7AA", "#FDBA74"] as [string, string] },
+          { val: 200, grad: ["#A7F3D0", "#5EEAD4"] as [string, string] },
+        ].map(({ val, grad }) => (
           <BudgetChip
             key={val}
             active={budgetValue === val && !budgetInput.trim()}
             label={`₱${val}`}
-            emoji={emoji}
             gradient={grad}
             onPress={() => {
               setBudgetInput("");
@@ -1011,8 +1090,8 @@ export function ItineraryScreen({ navigation }: any) {
           onChangeText={setBudgetInput}
           placeholder={
             categorySlug === "resorts-leisure"
-              ? "Custom entrance budget (optional)"
-              : "Custom budget per person (optional)"
+              ? "Enter entrance budget"
+              : "Enter budget per person"
           }
           placeholderTextColor="rgba(100,116,139,0.5)"
           keyboardType="numeric"
@@ -1026,25 +1105,10 @@ export function ItineraryScreen({ navigation }: any) {
         left="PRIORITIES (1ST → 3RD)"
         right={{ label: "What's this?", onPress: () => {} }}
       />
-      <View style={styles.prioRow}>
-        {([
-          { slot: 1 as const, key: prio1 },
-          { slot: 2 as const, key: prio2 },
-          { slot: 3 as const, key: prio3 },
-        ] as const).map(({ slot, key }) => {
-          const order: PriorityKey[] = ["distance", "popularity", "budget"];
-          return (
-            <PriorityChip
-              key={slot}
-              rank={slot}
-              priorityKey={key}
-              onPress={() => {
-                const next = order[(order.indexOf(key) + 1) % order.length];
-                setPriority(slot, next);
-              }}
-            />
-          );
-        })}
+      <View style={{ marginTop: 10, gap: 10 }}>
+        <PriorityRow rank={1} value={prio1} onSelect={(k) => setPriority(1, k)} />
+        <PriorityRow rank={2} value={prio2} onSelect={(k) => setPriority(2, k)} />
+        <PriorityRow rank={3} value={prio3} onSelect={(k) => setPriority(3, k)} />
       </View>
 
       {/* CTA */}
@@ -1078,6 +1142,9 @@ export function ItineraryScreen({ navigation }: any) {
 
   return (
     <ScrollView
+      ref={(r) => {
+        scrollRef.current = r;
+      }}
       style={styles.root}
       contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 26 }}
       showsVerticalScrollIndicator={false}
@@ -1365,7 +1432,7 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     alignItems: "center",
     paddingVertical: 10,
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: "rgba(148,163,184,0.20)",
     gap: 3,
@@ -1375,7 +1442,6 @@ const styles = StyleSheet.create({
     transform: [{ translateY: -2 }],
     ...shadowCompat({ opacity: 0.10, radius: 10, offsetY: 4, elevation: 4 }),
   },
-  budgetChipEmoji: { fontSize: 18 },
   budgetChipTxt: {
     fontSize: 12.5,
     fontWeight: "700",
@@ -1410,6 +1476,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#1E1B4B",
     minWidth: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    backgroundColor: "transparent",
+    ...(Platform.OS === "web"
+      ? ({
+          outlineStyle: "none",
+          outlineWidth: 0,
+        } as any)
+      : null),
   },
   budgetHint: { fontSize: 12, fontWeight: "600", color: "rgba(71,85,105,0.55)" },
 
@@ -1443,6 +1518,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   prioLabel: { fontSize: 12.5, fontWeight: "800", flex: 1 },
+
+  prioRow2: { gap: 8 },
+  prioRowLabel: { fontSize: 12.5, fontWeight: "800", color: "#1E1B4B" },
+  prioSeg: {
+    flexDirection: "row",
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1.5,
+    borderColor: "rgba(148,163,184,0.22)",
+    backgroundColor: "#FFFFFF",
+  },
+  prioSegBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRightWidth: 1,
+    borderRightColor: "rgba(148,163,184,0.18)",
+  },
+  prioSegBtnFirst: {},
+  prioSegBtnLast: { borderRightWidth: 0 },
+  prioSegBtnActive: {
+    backgroundColor: "rgba(4,120,126,0.10)",
+  },
+  prioSegTxt: { fontSize: 12.5, fontWeight: "800", color: "rgba(71,85,105,0.85)" },
+  prioSegTxtActive: { color: colors.primaryTealDeep },
 
   // CTA
   ctaHit: { marginTop: 16, borderRadius: 20, overflow: "hidden" },

@@ -6,6 +6,7 @@ import { FlashNotice } from "../components/FlashNotice";
 import {
   ActivityIndicator,
   Alert,
+  DeviceEventEmitter,
   Image,
   Pressable,
   ScrollView,
@@ -152,6 +153,9 @@ export function EditProfileScreen(_props: Props) {
         Alert.alert("Edit profile", aErr.message);
         return;
       }
+      // Re-fetch to ensure UI + cache reflect latest DB state
+      await load();
+      DeviceEventEmitter.emit("destinaph-profile-updated");
       setInitialUsernameNorm(unameNorm || null);
       setUsername(unameNorm || "");
       setFlash("Profile saved successfully.");
@@ -219,13 +223,16 @@ export function EditProfileScreen(_props: Props) {
               placeholder="Hal.: juandelacruz (3–24 character)"
               placeholderTextColor={colors.muted2}
             />
-            {email && (
-              <Text style={styles.emailRo}>
-                Email: {email}
-                {"\n"}
-                <Text style={styles.emailNote}>Email cannot be changed here.</Text>
-              </Text>
-            )}
+            <Text style={[styles.label, { marginTop: 14 }]}>Email</Text>
+            <TextInput
+              style={[styles.input, styles.inputDisabled]}
+              value={email ?? ""}
+              editable={false}
+              selectTextOnFocus={false}
+              placeholder="—"
+              placeholderTextColor={colors.muted2}
+            />
+            <Text style={styles.emailNote}>Email cannot be changed here.</Text>
             <Pressable style={[styles.primary, saving && styles.disabled]} onPress={() => void save()} disabled={saving}>
               {saving ? (
                 <ActivityIndicator color="#fff" />
@@ -310,13 +317,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
   },
-  emailRo: {
-    marginTop: 14,
-    fontSize: 13,
-    color: colors.muted,
-    lineHeight: 18,
+  inputDisabled: {
+    backgroundColor: "rgba(148,163,184,0.10)",
+    color: colors.muted2,
   },
   emailNote: {
+    marginTop: 8,
     fontSize: 12,
     color: colors.muted2,
   },

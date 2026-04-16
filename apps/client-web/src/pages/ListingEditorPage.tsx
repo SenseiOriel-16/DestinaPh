@@ -80,6 +80,11 @@ export function ListingEditorPage() {
   const [allowReservations, setAllowReservations] = useState(true);
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>([]);
+  const [alwaysOpen, setAlwaysOpen] = useState(true);
+  const [openHour, setOpenHour] = useState<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12>(8);
+  const [openMeridiem, setOpenMeridiem] = useState<"AM" | "PM">("AM");
+  const [closeHour, setCloseHour] = useState<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12>(5);
+  const [closeMeridiem, setCloseMeridiem] = useState<"AM" | "PM">("PM");
   const [operatingDay, setOperatingDay] = useState(false);
   const [operatingNight, setOperatingNight] = useState(false);
   const [entranceFeeDay, setEntranceFeeDay] = useState("");
@@ -100,6 +105,15 @@ export function ListingEditorPage() {
   const [detailReady, setDetailReady] = useState(isNew);
   const [foodCostRange, setFoodCostRange] = useState("");
   const [bestTimes, setBestTimes] = useState<BestTime[]>([]);
+
+  const previewFile = pendingFiles[0] ?? null;
+  const previewUrl = useMemo(() => (previewFile ? URL.createObjectURL(previewFile) : null), [previewFile]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   const categorySlug = categories.find((c) => c.id === categoryId)?.slug ?? "";
   const isResort = categorySlug === RESORT_SLUG;
@@ -265,6 +279,11 @@ export function ListingEditorPage() {
         tags?: string[] | null;
         accommodations?: AccRow[] | null;
         categories?: { slug?: string } | null;
+        operating_hours_always_open?: boolean | null;
+        operating_open_hour?: number | null;
+        operating_open_meridiem?: string | null;
+        operating_close_hour?: number | null;
+        operating_close_meridiem?: string | null;
         operating_day?: boolean | null;
         operating_night?: boolean | null;
         entrance_fee_day_pesos?: number | null;
@@ -278,6 +297,32 @@ export function ListingEditorPage() {
       setShortDescription(String(row.short_description ?? row.description ?? ""));
       setAllowReservations(row.allow_reservations !== false);
       setTags(Array.isArray(row.tags) ? row.tags : []);
+
+      const ao = row.operating_hours_always_open === true;
+      const oh = row.operating_open_hour;
+      const om = row.operating_open_meridiem;
+      const ch = row.operating_close_hour;
+      const cm = row.operating_close_meridiem;
+      if (ao) {
+        setAlwaysOpen(true);
+      } else if (
+        typeof oh === "number" &&
+        typeof ch === "number" &&
+        (om === "AM" || om === "PM") &&
+        (cm === "AM" || cm === "PM") &&
+        oh >= 1 &&
+        oh <= 12 &&
+        ch >= 1 &&
+        ch <= 12
+      ) {
+        setAlwaysOpen(false);
+        setOpenHour(oh as any);
+        setOpenMeridiem(om);
+        setCloseHour(ch as any);
+        setCloseMeridiem(cm);
+      } else {
+        setAlwaysOpen(true);
+      }
 
       const catRel = row.categories;
       const catSlug =
@@ -601,6 +646,19 @@ export function ListingEditorPage() {
       pricing_text = `₱${foodCost.min.toLocaleString("en-PH")}–₱${foodCost.max.toLocaleString("en-PH")} / person`;
     }
 
+    if (!alwaysOpen) {
+      if (
+        !Number.isFinite(Number(openHour)) ||
+        !Number.isFinite(Number(closeHour)) ||
+        (openMeridiem !== "AM" && openMeridiem !== "PM") ||
+        (closeMeridiem !== "AM" && closeMeridiem !== "PM")
+      ) {
+        setMsg("Please set valid opening and closing time, or choose Always open / 24-7.");
+        setBusy(false);
+        return;
+      }
+    }
+
     const payload = {
       owner_id: uid,
       name: name.trim(),
@@ -610,6 +668,11 @@ export function ListingEditorPage() {
       description: shortDescription.trim() || null,
       allow_reservations: allowReservations,
       tags: tags.length ? tags : [],
+      operating_hours_always_open: alwaysOpen,
+      operating_open_hour: alwaysOpen ? null : openHour,
+      operating_open_meridiem: alwaysOpen ? null : openMeridiem,
+      operating_close_hour: alwaysOpen ? null : closeHour,
+      operating_close_meridiem: alwaysOpen ? null : closeMeridiem,
       operating_day,
       operating_night,
       entrance_fee_day_pesos,
@@ -700,7 +763,7 @@ export function ListingEditorPage() {
   }
 
   return (
-    <div className="page page--flush-top">
+    <div className="page page--flush-top page--editor">
       <div className="editor-head">
         <Link to="/listings" className="link-back">
           ← Back
@@ -711,7 +774,7 @@ export function ListingEditorPage() {
       </div>
       {msg && <div className="alert-banner alert-banner--error">{msg}</div>}
       <form onSubmit={onSubmit}>
-        <div className="editor-grid">
+          <div className="editor-grid">
           <div className="editor-col">
             <div className="card editor-card">
               <h2 className="editor-card__title">Business information</h2>
@@ -791,13 +854,85 @@ export function ListingEditorPage() {
                   </button>
                 </div>
               </div>
+
+              <div className="field">
+                <span className="field__group-label" id="operating-hours-12h-label">
+                  Operating hours
+                </span>
+                <div className="field-checkbox-row" role="group" aria-labelledby="operating-hours-12h-label">
+                  <label className="field-checkbox">
+                    <input type="radio" name="always-open" checked={alwaysOpen} onChange={() => setAlwaysOpen(true)} />
+                    <span>Always open / 24-7</span>
+                  </label>
+                  <label className="field-checkbox">
+                    <input type="radio" name="always-open" checked={!alwaysOpen} onChange={() => setAlwaysOpen(false)} />
+                    <span>Set time</span>
+                  </label>
+                </div>
+                {!alwaysOpen ? (
+                  <div className="field-checkbox-row" style={{ marginTop: 10 }}>
+                    <div className="field" style={{ margin: 0, flex: 1 }}>
+                      <label htmlFor="open-hour">Opening time</label>
+                      <div className="field-checkbox-row" style={{ marginTop: 6 }}>
+                        <select
+                          id="open-hour"
+                          value={openHour}
+                          onChange={(e) => setOpenHour(Number(e.target.value) as any)}
+                        >
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          aria-label="Opening meridiem"
+                          value={openMeridiem}
+                          onChange={(e) => setOpenMeridiem(e.target.value as any)}
+                        >
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="field" style={{ margin: 0, flex: 1 }}>
+                      <label htmlFor="close-hour">Closing time</label>
+                      <div className="field-checkbox-row" style={{ marginTop: 6 }}>
+                        <select
+                          id="close-hour"
+                          value={closeHour}
+                          onChange={(e) => setCloseHour(Number(e.target.value) as any)}
+                        >
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          aria-label="Closing meridiem"
+                          value={closeMeridiem}
+                          onChange={(e) => setCloseMeridiem(e.target.value as any)}
+                        >
+                          <option value="AM">AM</option>
+                          <option value="PM">PM</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 13, color: "var(--muted)", margin: "4px 0 0" }}>
+                    Displayed in the mobile app as <strong>Always Open</strong>.
+                  </p>
+                )}
+              </div>
               {isResort && (
                 <>
                   <div className="field">
-                    <span className="field__group-label" id="operating-hours-label">
-                      Operating hours
+                    <span className="field__group-label" id="fee-periods-label">
+                      Entrance fee periods
                     </span>
-                    <div className="field-checkbox-row" role="group" aria-labelledby="operating-hours-label">
+                    <div className="field-checkbox-row" role="group" aria-labelledby="fee-periods-label">
                       <label className="field-checkbox">
                         <input
                           type="checkbox"
@@ -891,108 +1026,94 @@ export function ListingEditorPage() {
             </div>
 
             <div className="card editor-card">
-              <h2 className="editor-card__title">Location</h2>
-            <p className="editor-help">
-              Provinces, cities/municipalities, and barangays come from the official <strong>PSGC</strong> public API (
-              <a href="https://psgc.gitlab.io/" target="_blank" rel="noreferrer">
-                psgc.gitlab.io
-              </a>
-              ).
-            </p>
-            {geoError ? <p className="editor-help editor-help--error">{geoError}</p> : null}
-            {legacyGeoNote ? <p className="editor-help">{legacyGeoNote}</p> : null}
-
-            <div className="editor-2col">
-              <div className="field">
-                <label htmlFor="prov">Province</label>
-                <SearchableSelect
-                  id="prov"
-                  value={geoProvCode}
-                  onChange={setGeoProvCode}
-                  options={provinceOptions}
-                  disabled={!psgcProvinces.length}
-                  placeholder="— Select province —"
-                  searchPlaceholder="Search province…"
-                  allowClear
-                  clearLabel="— Select province —"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="mun">City / Municipality</label>
-                <SearchableSelect
-                  id="mun"
-                  value={geoMunCode}
-                  onChange={setGeoMunCode}
-                  options={municipalityOptions}
-                  disabled={!geoProvCode || geoLoadingMun}
-                  placeholder={geoLoadingMun ? "Loading…" : "— Select city or municipality —"}
-                  searchPlaceholder="Search city or municipality…"
-                />
-              </div>
-            </div>
-
-            <div className="editor-2col editor-2col--tight">
-              <div className="field">
-                <label htmlFor="brgy">Barangay (optional)</label>
-                <SearchableSelect
-                  id="brgy"
-                  value={geoBrgyCode}
-                  onChange={setGeoBrgyCode}
-                  options={barangayOptions}
-                  disabled={!geoMunCode || geoLoadingBrgy}
-                  placeholder={geoLoadingBrgy ? "Loading…" : "— No barangay selected —"}
-                  searchPlaceholder="Search barangay…"
-                  allowClear
-                  clearLabel="— No barangay selected —"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="addr">Zone & street</label>
-                <input
-                  id="addr"
-                  placeholder="Street, zone, landmark"
-                  value={addressLine}
-                  onChange={(e) => setAddressLine(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <details className="editor-disclosure">
-              <summary>
-                <span>Map location (optional)</span>
-                <span className="editor-disclosure__meta">
-                  {latitudeStr.trim() || longitudeStr.trim() ? "Set" : "Not set"}
-                </span>
-              </summary>
-              <p className="editor-help" style={{ marginTop: 10 }}>
-                Used for the traveler app map and directions. Get coordinates from Google Maps (long-press the pin, then
-                copy latitude / longitude).
-              </p>
-              <div className="editor-2col editor-2col--tight">
-                <div className="field">
-                  <label htmlFor="lat">Latitude</label>
+              <h2 className="editor-card__title">Photos</h2>
+              <details className="editor-disclosure" open={pendingFiles.length > 0 || existingPhotoCount === 0}>
+                <summary>
+                  <span>{isResort ? "Resort images" : "Listing images"}</span>
+                  <span className="editor-disclosure__meta">
+                    {existingPhotoCount} saved · {pendingFiles.length} queued
+                  </span>
+                </summary>
+                <p className="editor-help" style={{ marginTop: 10 }}>
+                  Up to {MAX_LISTING_PHOTOS} photos total (including photos already saved). Each file is resized and saved as
+                  JPEG before upload to save storage.
+                </p>
+                <div
+                  className="upload-zone"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={onDrop}
+                  onClick={() => {
+                    if (existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS) return;
+                    document.getElementById("imgs")?.click();
+                  }}
+                  role="presentation"
+                  style={{
+                    opacity: existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS ? 0.55 : 1,
+                    pointerEvents: existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS ? "none" : "auto",
+                  }}
+                >
+                  <div className="upload-zone__preview" aria-hidden>
+                    {previewUrl ? (
+                      <img src={previewUrl} alt="" />
+                    ) : (
+                      <div className="upload-zone__preview-empty">
+                        <span className="upload-zone__preview-icon">⬆</span>
+                        <span>4:3 preview</span>
+                      </div>
+                    )}
+                  </div>
+                  <p style={{ margin: 0 }}>
+                    <strong>{previewUrl ? "Add more images" : "Upload images"}</strong>
+                  </p>
+                  <p className="upload-zone__hint">
+                    Drag and drop or click — max {MAX_LISTING_PHOTOS} photos ({existingPhotoCount} saved,{" "}
+                    {pendingFiles.length} queued)
+                  </p>
+                  {pendingFiles.length > 0 && (
+                    <ul style={{ fontSize: 13, marginTop: 10, textAlign: "left", listStyle: "none", padding: 0 }}>
+                      {pendingFiles.map((f, i) => (
+                        <li
+                          key={`${f.name}-${i}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 8,
+                            marginBottom: 6,
+                          }}
+                        >
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{f.name}</span>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            title="Remove"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setPendingFiles((prev) => prev.filter((_, j) => j !== i));
+                            }}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   <input
-                    id="lat"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    placeholder="e.g. 13.6218"
-                    value={latitudeStr}
-                    onChange={(e) => setLatitudeStr(e.target.value)}
+                    id="imgs"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="upload-zone__input"
+                    onChange={(e) => {
+                      const list = e.target.files;
+                      void (async () => {
+                        await ingestImageFiles(list);
+                        e.target.value = "";
+                      })();
+                    }}
                   />
                 </div>
-                <div className="field">
-                  <label htmlFor="lng">Longitude</label>
-                  <input
-                    id="lng"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    placeholder="e.g. 123.1875"
-                    value={longitudeStr}
-                    onChange={(e) => setLongitudeStr(e.target.value)}
-                  />
-                </div>
-              </div>
-            </details>
+              </details>
             </div>
           </div>
 
@@ -1091,89 +1212,112 @@ export function ListingEditorPage() {
                 </details>
               )}
             </div>
-          </div>
-        </div>
 
-        <div className="card editor-card">
-          <h2 className="editor-card__title">Photos</h2>
-          <details className="editor-disclosure" open={pendingFiles.length > 0 || existingPhotoCount === 0}>
-            <summary>
-              <span>{isResort ? "Resort images" : "Listing images"}</span>
-              <span className="editor-disclosure__meta">
-                {existingPhotoCount} saved · {pendingFiles.length} queued
-              </span>
-            </summary>
-            <p className="editor-help" style={{ marginTop: 10 }}>
-              Up to {MAX_LISTING_PHOTOS} photos total (including photos already saved). Each file is resized and saved as
-              JPEG before upload to save storage.
-            </p>
-            <div
-              className="upload-zone"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={onDrop}
-              onClick={() => {
-                if (existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS) return;
-                document.getElementById("imgs")?.click();
-              }}
-              role="presentation"
-              style={{
-                opacity: existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS ? 0.55 : 1,
-                pointerEvents: existingPhotoCount + pendingFiles.length >= MAX_LISTING_PHOTOS ? "none" : "auto",
-              }}
-            >
-              <span className="upload-zone__icon">⬆</span>
-              <p>
-                <strong>Upload images</strong>
+            <div className="card editor-card">
+              <h2 className="editor-card__title">Location</h2>
+              <p className="editor-help">
+                Provinces, cities/municipalities, and barangays come from the official <strong>PSGC</strong> public API (
+                <a href="https://psgc.gitlab.io/" target="_blank" rel="noreferrer">
+                  psgc.gitlab.io
+                </a>
+                ).
               </p>
-              <p className="upload-zone__hint">
-                Drag and drop or click — max {MAX_LISTING_PHOTOS} photos ({existingPhotoCount} saved,{" "}
-                {pendingFiles.length} queued)
-              </p>
-              {pendingFiles.length > 0 && (
-                <ul style={{ fontSize: 13, marginTop: 10, textAlign: "left", listStyle: "none", padding: 0 }}>
-                  {pendingFiles.map((f, i) => (
-                    <li
-                      key={`${f.name}-${i}`}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 8,
-                        marginBottom: 6,
-                      }}
-                    >
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{f.name}</span>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        title="Remove"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          setPendingFiles((prev) => prev.filter((_, j) => j !== i));
-                        }}
-                      >
-                        ×
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <input
-                id="imgs"
-                type="file"
-                accept="image/*"
-                multiple
-                className="upload-zone__input"
-                onChange={(e) => {
-                  const list = e.target.files;
-                  void (async () => {
-                    await ingestImageFiles(list);
-                    e.target.value = "";
-                  })();
-                }}
-              />
+              {geoError ? <p className="editor-help editor-help--error">{geoError}</p> : null}
+              {legacyGeoNote ? <p className="editor-help">{legacyGeoNote}</p> : null}
+
+              <div className="editor-2col">
+                <div className="field">
+                  <label htmlFor="prov">Province</label>
+                  <SearchableSelect
+                    id="prov"
+                    value={geoProvCode}
+                    onChange={setGeoProvCode}
+                    options={provinceOptions}
+                    disabled={!psgcProvinces.length}
+                    placeholder="— Select province —"
+                    searchPlaceholder="Search province…"
+                    allowClear
+                    clearLabel="— Select province —"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="mun">City / Municipality</label>
+                  <SearchableSelect
+                    id="mun"
+                    value={geoMunCode}
+                    onChange={setGeoMunCode}
+                    options={municipalityOptions}
+                    disabled={!geoProvCode || geoLoadingMun}
+                    placeholder={geoLoadingMun ? "Loading…" : "— Select city or municipality —"}
+                    searchPlaceholder="Search city or municipality…"
+                  />
+                </div>
+              </div>
+
+              <div className="editor-2col editor-2col--tight">
+                <div className="field">
+                  <label htmlFor="brgy">Barangay (optional)</label>
+                  <SearchableSelect
+                    id="brgy"
+                    value={geoBrgyCode}
+                    onChange={setGeoBrgyCode}
+                    options={barangayOptions}
+                    disabled={!geoMunCode || geoLoadingBrgy}
+                    placeholder={geoLoadingBrgy ? "Loading…" : "— No barangay selected —"}
+                    searchPlaceholder="Search barangay…"
+                    allowClear
+                    clearLabel="— No barangay selected —"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="addr">Zone & street</label>
+                  <input
+                    id="addr"
+                    placeholder="Street, zone, landmark"
+                    value={addressLine}
+                    onChange={(e) => setAddressLine(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <details className="editor-disclosure">
+                <summary>
+                  <span>Map location (optional)</span>
+                  <span className="editor-disclosure__meta">
+                    {latitudeStr.trim() || longitudeStr.trim() ? "Set" : "Not set"}
+                  </span>
+                </summary>
+                <p className="editor-help" style={{ marginTop: 10 }}>
+                  Used for the traveler app map and directions. Get coordinates from Google Maps (long-press the pin, then
+                  copy latitude / longitude).
+                </p>
+                <div className="editor-2col editor-2col--tight">
+                  <div className="field">
+                    <label htmlFor="lat">Latitude</label>
+                    <input
+                      id="lat"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="e.g. 13.6218"
+                      value={latitudeStr}
+                      onChange={(e) => setLatitudeStr(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="lng">Longitude</label>
+                    <input
+                      id="lng"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="e.g. 123.1875"
+                      value={longitudeStr}
+                      onChange={(e) => setLongitudeStr(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </details>
             </div>
-          </details>
+          </div>
         </div>
 
         <div className="page-footer-actions">

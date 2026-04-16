@@ -4,10 +4,11 @@ import type { NavigationProp } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  DeviceEventEmitter,
   Image,
   Pressable,
   ScrollView,
@@ -93,6 +94,13 @@ export function ProfileScreen({ navigation }: Props) {
       void refresh();
     }, [refresh]),
   );
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("destinaph-profile-updated", () => {
+      void refresh();
+    });
+    return () => sub.remove();
+  }, [refresh]);
 
   const signUp = async () => {
     setMessage(null);
@@ -227,6 +235,12 @@ export function ProfileScreen({ navigation }: Props) {
       label: "My Bookings",
       icon: "calendar-outline",
       onPress: () => navigation.navigate("Bookings"),
+    },
+    {
+      key: "messages",
+      label: "Messages",
+      icon: "chatbubble-ellipses-outline",
+      onPress: () => rootNav(navigation)?.navigate("MessagesInbox" as any),
     },
     {
       key: "fav",

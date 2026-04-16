@@ -1,5 +1,7 @@
 import type { NavigatorScreenParams } from "@react-navigation/native";
 
+export type BookingsTabFilter = "upcoming" | "confirmed" | "rejected";
+
 export type HomeStackParamList = {
   HomeMain: undefined;
   Detail: { id: string };
@@ -13,7 +15,7 @@ export type ExploreStackParamList = {
 };
 
 export type BookingsStackParamList = {
-  BookingsMain: undefined;
+  BookingsMain: { initialTab?: BookingsTabFilter } | undefined;
   Detail: { id: string };
   BookingRequest: { businessId: string };
 };

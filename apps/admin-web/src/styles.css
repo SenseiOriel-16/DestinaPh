@@ -1748,6 +1748,18 @@ textarea {
   flex-shrink: 0;
 }
 
+.recent-avatar--img {
+  overflow: hidden;
+  background: #eef2f7;
+}
+
+.recent-avatar--img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 /* Login / register: split hero + solid form */
 .auth-split {
   display: grid;

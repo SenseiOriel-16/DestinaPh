@@ -16,6 +16,7 @@ import { AboutDestinaPHScreen } from "./src/screens/AboutDestinaPHScreen";
 import { FavoritesScreen } from "./src/screens/FavoritesScreen";
 import { ReviewsScreen } from "./src/screens/ReviewsScreen";
 import { EditProfileScreen } from "./src/screens/EditProfileScreen";
+import { MessagesInboxScreen } from "./src/screens/MessagesInboxScreen";
 import { colors } from "./src/theme/colors";
 import { BookingStatusNotifier } from "./src/components/BookingStatusNotifier";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -26,6 +27,7 @@ import { getTermsPrivacyAccepted, setTermsPrivacyAccepted, TERMS_PRIVACY_OPEN_EV
 import { navigationRef } from "./src/navigation/navRef";
 import { LastSeenPinger } from "./src/components/LastSeenPinger";
 import { stopVisitConfirmation } from "./src/lib/visitConfirmation";
+import { ChatOverlay } from "./src/components/ChatOverlay";
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -47,6 +49,7 @@ export type RootStackParamList = {
   Favorites: undefined;
   Reviews: undefined;
   EditProfile: undefined;
+  MessagesInbox: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -113,6 +116,7 @@ export default function App() {
           <StatusBar style="light" />
           <LastSeenPinger />
           {canShowNotifUi ? <BookingStatusNotifier /> : null}
+          {canShowNotifUi ? <ChatOverlay /> : null}
           <TermsPrivacyModal
             visible={tpVisible}
             mustAccept={tpAccepted === false}
@@ -161,6 +165,11 @@ export default function App() {
               name="EditProfile"
               component={EditProfileScreen}
               options={{ ...navyStackHeader, title: "Edit profile" }}
+            />
+            <Stack.Screen
+              name="MessagesInbox"
+              component={MessagesInboxScreen}
+              options={{ ...navyStackHeader, title: "Messages" }}
             />
           </Stack.Navigator>
         </NavigationContainer>

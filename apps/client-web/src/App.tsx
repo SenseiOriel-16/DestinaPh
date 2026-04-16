@@ -34,6 +34,9 @@ const PaymentAccountsPage = lazy(() =>
 const OwnerReservationsPage = lazy(() =>
   import("./pages/OwnerReservationsPage").then((m) => ({ default: m.OwnerReservationsPage })),
 );
+const OwnerMessagesPage = lazy(() =>
+  import("./pages/OwnerMessagesPage").then((m) => ({ default: m.OwnerMessagesPage })),
+);
 const SupportPage = lazy(() =>
   import("./pages/SupportPage").then((m) => ({ default: m.SupportPage })),
 );
@@ -59,6 +62,7 @@ export default function App() {
             <Route path="listings/new" element={<ListingEditorPage />} />
             <Route path="listings/:id" element={<ListingEditorPage />} />
             <Route path="reservations" element={<OwnerReservationsPage />} />
+            <Route path="messages" element={<OwnerMessagesPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="support" element={<SupportPage />} />
             <Route path="settings" element={<OwnerSettingsLayout />}>

@@ -48,6 +48,8 @@ export function SettingsPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [fullName, setFullName] = useState("");
   const [initialFullName, setInitialFullName] = useState("");
+  const [mobileNumber, setMobileNumber] = useState("");
+  const [initialMobileNumber, setInitialMobileNumber] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [initialBusinessName, setInitialBusinessName] = useState("");
   const [businessId, setBusinessId] = useState<string | null>(null);
@@ -75,10 +77,17 @@ export function SettingsPage() {
       setAccountEmail(u.email ?? null);
       setUserId(u.id);
 
-      const { data: prof } = await supabase.from("profiles").select("full_name").eq("id", u.id).maybeSingle();
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("full_name,registration_phone")
+        .eq("id", u.id)
+        .maybeSingle();
       const fn = prof?.full_name?.trim() ?? "";
       setFullName(fn);
       setInitialFullName(fn);
+      const phone = prof?.registration_phone?.trim() ?? ((u.user_metadata as any)?.phone?.toString().trim?.() ?? "");
+      setMobileNumber(phone);
+      setInitialMobileNumber(phone);
 
       const { data: rows } = await supabase
         .from("businesses")
@@ -116,6 +125,7 @@ export function SettingsPage() {
       setProfileMessage("Please enter your name.");
       return;
     }
+    const phone = mobileNumber.trim();
     const bn = businessName.trim();
     if (businessId && includeBusinessName && !bn) {
       setProfileMessage("Business name cannot be empty.");
@@ -125,12 +135,15 @@ export function SettingsPage() {
     setProfileBusy(true);
     setProfileMessage(null);
     try {
-      const { error: pErr } = await supabase.from("profiles").update({ full_name: fn }).eq("id", userId);
+      const { error: pErr } = await supabase
+        .from("profiles")
+        .update({ full_name: fn, registration_phone: phone || null })
+        .eq("id", userId);
       if (pErr) {
         setProfileMessage(pErr.message);
         return;
       }
-      const { error: aErr } = await supabase.auth.updateUser({ data: { full_name: fn } });
+      const { error: aErr } = await supabase.auth.updateUser({ data: { full_name: fn, phone: phone || null } });
       if (aErr) {
         setProfileMessage(aErr.message);
         return;
@@ -144,6 +157,7 @@ export function SettingsPage() {
         setInitialBusinessName(bn);
       }
       setInitialFullName(fn);
+      setInitialMobileNumber(phone);
       window.dispatchEvent(new CustomEvent("destinaph-owner-profile-updated"));
       setProfileMessage("Profile saved successfully.");
       setConfirmBizOpen(false);
@@ -164,6 +178,7 @@ export function SettingsPage() {
       setProfileMessage("Please enter your name.");
       return;
     }
+    // mobileNumber is optional; allow empty.
     const bizChanged = Boolean(businessId) && businessName.trim() !== initialBusinessName.trim();
     if (bizChanged) {
       setConfirmBizOpen(true);
@@ -313,6 +328,22 @@ export function SettingsPage() {
                 <p className="owner-settings-form__hint">Create a listing to set your business name here.</p>
               </>
             )}
+
+            <label className="owner-settings-form__label" htmlFor="profile-phone">
+              Mobile number
+            </label>
+            <input
+              id="profile-phone"
+              className="owner-settings-form__input"
+              type="tel"
+              value={mobileNumber}
+              onChange={(ev) => setMobileNumber(ev.target.value)}
+              placeholder="09XXXXXXXXX"
+              autoComplete="tel"
+            />
+            <p className="owner-settings-form__hint">
+              This is the contact number you entered during registration. You can update it anytime.
+            </p>
 
             <label className="owner-settings-form__label" htmlFor="profile-email">
               Email

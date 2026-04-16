@@ -122,7 +122,7 @@ export function ExploreScreen({ navigation, route }: Props) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
+    const list = rows.filter((r) => {
       const catOk = category === "all" ? true : (r.categories?.slug ?? "") === category;
       const subOk =
         category !== "nature-adventure" || natureSubcategory === "all"
@@ -138,6 +138,15 @@ export function ExploreScreen({ navigation, route }: Props) {
         (r.municipalities?.name ?? "").toLowerCase().includes(q);
       return catOk && subOk && munOk && (textOk || tagsOk);
     });
+
+    // Requirement: when there's no category filter (All), arrange destinations alphabetically.
+    if (category === "all") {
+      return [...list].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+    }
+
+    return list;
   }, [rows, category, natureSubcategory, municipality, search]);
 
   const listHeader = (
