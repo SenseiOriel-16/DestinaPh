@@ -10,6 +10,7 @@ import { HERO_BACKGROUND } from "../constants/heroBackground";
 import { colors } from "../theme/colors";
 import { BrandAppIcon } from "../ui/BrandAppIcon";
 import { GlassPanel } from "../ui/GlassPanel";
+import { shadowCompat, textShadowCompat } from "../lib/rnWebStyleCompat";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Welcome">;
 
@@ -153,10 +154,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.26)",
 
-    shadowColor: "#fff",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 5,
+    ...shadowCompat({ color: "#fff", opacity: 0.25, radius: 10, offsetY: 6, elevation: 5 }),
   },
 
   brandName: {
@@ -196,9 +194,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     textAlign: "center",
     letterSpacing: -0.6,
-    textShadowColor: "rgba(0,0,0,0.25)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6,
+    ...textShadowCompat({ color: "rgba(0,0,0,0.25)", offsetY: 1, radius: 6 }),
   },
 
   sub: {
@@ -218,11 +214,7 @@ const styles = StyleSheet.create({
   gradPress: {
     borderRadius: 18,
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOpacity: 0.22,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 6,
+    ...shadowCompat({ opacity: 0.22, radius: 12, offsetY: 5, elevation: 6 }),
   },
   gradInner: {
     paddingVertical: 17,

@@ -20,7 +20,7 @@ export function TermsPrivacyModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={mustAccept ? undefined : onClose}>
       <Pressable style={styles.overlay} onPress={mustAccept ? undefined : onClose} />
-      <View style={styles.wrap} pointerEvents="box-none">
+      <View style={[styles.wrap, { pointerEvents: "box-none" as any }]}>
         <GlassPanel
           style={styles.cardOuter}
           contentStyle={styles.cardInner}

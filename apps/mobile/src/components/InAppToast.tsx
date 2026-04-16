@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme/colors";
+import { shadowCompat } from "../lib/rnWebStyleCompat";
 
 export type ToastModel = {
   title: string;
@@ -27,7 +28,7 @@ export function InAppToast({
   if (!toast) return null;
 
   return (
-    <View pointerEvents="box-none" style={[styles.wrap, { paddingTop: Math.max(insets.top, 12) }]}>
+    <View style={[styles.wrap, { paddingTop: Math.max(insets.top, 12), pointerEvents: "box-none" as any }]}>
       <Pressable
         style={styles.card}
         onPress={() => {
@@ -73,11 +74,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.96)",
     borderWidth: 1,
     borderColor: "rgba(11,184,196,0.35)",
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 5,
+    ...shadowCompat({ opacity: 0.12, radius: 12, offsetY: 6, elevation: 5 }),
   },
   dot: {
     width: 10,

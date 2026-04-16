@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
+import { shadowCompat } from "../lib/rnWebStyleCompat";
 import {
   BOOKING_NOTIFICATION_EVENT,
   BOOKING_OPEN_DETAIL_EVENT,
@@ -53,8 +54,10 @@ export function BookingNotificationBell({ variant = "fab" }: BookingNotification
   return (
     <>
       <View
-        pointerEvents="box-none"
-        style={isInline ? styles.inlineWrap : [styles.fabWrap, { top: Math.max(insets.top, 10) + 6 }]}
+        style={[
+          isInline ? styles.inlineWrap : [styles.fabWrap, { top: Math.max(insets.top, 10) + 6 }],
+          { pointerEvents: "box-none" as any },
+        ]}
       >
         <Pressable
           onPress={openPanel}
@@ -155,11 +158,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(11,184,196,0.28)",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
+    ...shadowCompat({ opacity: 0.25, radius: 16, offsetY: 10, elevation: 8 }),
   },
   badge: {
     position: "absolute",
@@ -192,11 +191,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15,22,34,0.92)",
     borderWidth: 1,
     borderColor: "rgba(148,163,184,0.18)",
-    shadowColor: "#000",
-    shadowOpacity: 0.35,
-    shadowRadius: 26,
-    shadowOffset: { width: 0, height: 16 },
-    elevation: 12,
+    ...shadowCompat({ opacity: 0.35, radius: 26, offsetY: 16, elevation: 12 }),
     maxHeight: "70%",
   },
   panelHead: {

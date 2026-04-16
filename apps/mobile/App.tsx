@@ -24,6 +24,8 @@ import { DeviceEventEmitter } from "react-native";
 import { TermsPrivacyModal } from "./src/components/TermsPrivacyModal";
 import { getTermsPrivacyAccepted, setTermsPrivacyAccepted, TERMS_PRIVACY_OPEN_EVENT } from "./src/lib/termsPrivacy";
 import { navigationRef } from "./src/navigation/navRef";
+import { LastSeenPinger } from "./src/components/LastSeenPinger";
+import { stopVisitConfirmation } from "./src/lib/visitConfirmation";
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -32,7 +34,13 @@ export type RootStackParamList = {
   ForgotPassword: undefined;
   InterestSelect: { intent?: "onboarding" | "edit" } | undefined;
   Main: NavigatorScreenParams<TabParamList> | undefined;
-  DestinationMap: { title: string; destLat: number; destLng: number };
+  DestinationMap: {
+    title: string;
+    destLat: number;
+    destLng: number;
+    businessId?: string;
+    categoryName?: string | null;
+  };
   Settings: undefined;
   HelpSupport: undefined;
   AboutDestinaPH: undefined;
@@ -89,6 +97,8 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
+  useEffect(() => stopVisitConfirmation, []);
+
   return (
     <SafeAreaProvider>
       <ItineraryProvider>
@@ -101,6 +111,7 @@ export default function App() {
           }}
         >
           <StatusBar style="light" />
+          <LastSeenPinger />
           {canShowNotifUi ? <BookingStatusNotifier /> : null}
           <TermsPrivacyModal
             visible={tpVisible}

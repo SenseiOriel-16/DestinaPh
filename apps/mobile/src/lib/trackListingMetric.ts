@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 
-/** Maps, itinerary, reserve, etc. — stored as intent_visit for admin analytics. */
+/** Fallback analytics-only intent visit (no geo confirmation). */
 export function trackListingIntentVisit(businessId: string): void {
   void supabase.rpc("track_business_metric", { target: businessId, metric: "click" });
 }

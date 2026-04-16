@@ -18,6 +18,7 @@ import { HERO_BACKGROUND } from "../constants/heroBackground";
 import { TRAVEL_CATEGORIES } from "../data/travelCategories";
 import { getInterestSlugs, markOnboardingComplete, saveInterestSlugs } from "../lib/onboardingStorage";
 import { colors } from "../theme/colors";
+import { shadowCompat, textShadowCompat } from "../lib/rnWebStyleCompat";
 import { BrandAppIcon } from "../ui/BrandAppIcon";
 import { GlassPanel } from "../ui/GlassPanel";
 
@@ -152,18 +153,18 @@ export function InterestSelectScreen({ navigation, route }: Props) {
                     ]}
                   >
                     <BlurView intensity={15} tint="dark" style={StyleSheet.absoluteFill} />
-                    <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.cardVeil]} />
+                    <View style={[StyleSheet.absoluteFill, styles.cardVeil, { pointerEvents: "none" as any }]} />
                     <View style={styles.cardBody}>
                       <View style={styles.cardTopRow}>
                         <View style={[styles.iconSquare, { backgroundColor: theme.iconBg }]}>
                           <Ionicons name={theme.icon} color="#fff" size={22} />
                         </View>
                         {on ? (
-                          <View style={[styles.checkBadgeInline, { backgroundColor: theme.iconBg }]} pointerEvents="none">
+                          <View style={[styles.checkBadgeInline, { backgroundColor: theme.iconBg, pointerEvents: "none" as any }]}>
                             <Ionicons name="checkmark" size={16} color="#fff" />
                           </View>
                         ) : (
-                          <View style={styles.checkBadgeInlinePlaceholder} pointerEvents="none" />
+                          <View style={[styles.checkBadgeInlinePlaceholder, { pointerEvents: "none" as any }]} />
                         )}
                       </View>
                       <Text style={[styles.cardLabel, { color: on ? "#fff" : "rgba(255,255,255,0.92)" }]} numberOfLines={3}>
@@ -285,9 +286,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 22,
     letterSpacing: -0.5,
-    textShadowColor: "rgba(0,0,0,0.25)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6,
+    ...textShadowCompat({ color: "rgba(0,0,0,0.25)", offsetY: 1, radius: 6 }),
   },
   categoryRow: {
     flexDirection: "row",
@@ -300,11 +299,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: "hidden",
     backgroundColor: "transparent",
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    ...shadowCompat({ opacity: 0.12, radius: 10, offsetY: 4, elevation: 5 }),
   },
   cardVeil: {
     backgroundColor: "rgba(255,255,255,0.10)",
@@ -357,9 +352,7 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.88)",
     fontSize: 14,
     fontWeight: "600",
-    textShadowColor: "rgba(0,0,0,0.2)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    ...textShadowCompat({ color: "rgba(0,0,0,0.2)", offsetY: 1, radius: 4 }),
   },
   footerBar: {
     position: "absolute",

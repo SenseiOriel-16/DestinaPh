@@ -31,6 +31,7 @@ import { supabase } from "../lib/supabase";
 import { BrandAppIcon } from "../ui/BrandAppIcon";
 import { colors } from "../theme/colors";
 import { BookingNotificationBell } from "../components/BookingNotificationBell";
+import { shadowCompat, textShadowCompat } from "../lib/rnWebStyleCompat";
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<HomeStackParamList, "HomeMain">,
@@ -70,6 +71,7 @@ export function HomeScreen({ navigation }: Props) {
   const [recommendedNear, setRecommendedNear] = useState<NearRow[]>([]);
   const [hasLocation, setHasLocation] = useState(false);
   const heroCtaPulse = useRef(new Animated.Value(1)).current;
+  const useNativeDriver = Platform.OS !== "web";
 
   const categoryCardWidth = useMemo(() => {
     const inner = windowWidth - PAGE_HORIZONTAL_PAD - CATEGORY_GAP_TOTAL;
@@ -148,19 +150,19 @@ export function HomeScreen({ navigation }: Props) {
           toValue: 1.06,
           duration: 900,
           easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
+          useNativeDriver,
         }),
         Animated.timing(heroCtaPulse, {
           toValue: 1,
           duration: 900,
           easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
+          useNativeDriver,
         }),
       ]),
     );
     anim.start();
     return () => anim.stop();
-  }, [heroCtaPulse]);
+  }, [heroCtaPulse, useNativeDriver]);
 
   return (
     <ScrollView
@@ -182,8 +184,8 @@ export function HomeScreen({ navigation }: Props) {
 
       <View style={styles.hero} collapsable={false}>
         <Image source={HERO_BACKGROUND} style={styles.heroBg} resizeMode="cover" />
-        <View style={styles.heroOverlay} pointerEvents="box-none">
-          <View style={styles.heroTextWrap} pointerEvents="none">
+        <View style={[styles.heroOverlay, { pointerEvents: "box-none" }]}>
+          <View style={[styles.heroTextWrap, { pointerEvents: "none" }]}>
             <Text style={styles.heroEyebrow}>Discover the beauty of</Text>
             <Text style={styles.heroTitle}>Camarines Sur</Text>
             <Text style={styles.heroSub}>Explore top destinations near you!</Text>
@@ -396,27 +398,21 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 13,
     fontWeight: "600",
-    textShadowColor: "rgba(0,0,0,0.9)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6,
+    ...textShadowCompat({ color: "rgba(0,0,0,0.9)", offsetY: 1, radius: 6 }),
   },
   heroTitle: {
     color: "#fff",
     fontSize: 26,
     fontWeight: "800",
     marginTop: 2,
-    textShadowColor: "rgba(0,0,0,0.92)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 12,
+    ...textShadowCompat({ color: "rgba(0,0,0,0.92)", offsetY: 2, radius: 12 }),
   },
   heroSub: {
     color: "#fff",
     fontSize: 14,
     marginTop: 6,
     fontWeight: "600",
-    textShadowColor: "rgba(0,0,0,0.9)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 8,
+    ...textShadowCompat({ color: "rgba(0,0,0,0.9)", offsetY: 1, radius: 8 }),
   },
   heroCta: {
     backgroundColor: colors.primaryTeal,
@@ -425,11 +421,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 2,
     borderColor: "rgba(255,255,255,0.35)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 6,
+    ...shadowCompat({ opacity: 0.35, radius: 5, offsetY: 3, elevation: 6 }),
   },
   heroCtaText: {
     color: "#fff",
@@ -468,11 +460,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     backgroundColor: "transparent",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    ...shadowCompat({ opacity: 0.1, radius: 6, offsetY: 3, elevation: 3 }),
   },
   categoryCardPressed: {
     opacity: 0.88,
@@ -518,11 +506,7 @@ const styles = StyleSheet.create({
     padding: 10,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    ...shadowCompat({ opacity: 0.06, radius: 8, offsetY: 2, elevation: 2 }),
   },
   nearImg: {
     width: "100%",

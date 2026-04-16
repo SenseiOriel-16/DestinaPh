@@ -21,6 +21,7 @@ import { type AccommodationItem, normalizeAccommodations } from "../lib/accommod
 import { type LocalImage, uploadBookingPaymentProof } from "../lib/uploadBookingProof";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
+import { shadowCompat } from "../lib/rnWebStyleCompat";
 import { GlassPanel } from "../ui/GlassPanel";
 
 type AnyBookingRequestProps =
@@ -567,7 +568,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
     <View style={styles.shell}>
       <Modal visible={doneModalOpen} transparent animationType="fade" onRequestClose={() => setDoneModalOpen(false)}>
         <Pressable style={styles.doneModalOverlay} onPress={() => setDoneModalOpen(false)} />
-        <View style={styles.doneWrap} pointerEvents="box-none">
+        <View style={[styles.doneWrap, { pointerEvents: "box-none" as any }]}>
           <View style={styles.doneCardSolid}>
             <View style={styles.doneIconSolid}>
               <Ionicons name="checkmark" size={34} color="#fff" />
@@ -674,7 +675,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
             onRequestClose={() => setAccPickerOpen(false)}
           >
             <Pressable style={styles.modalOverlay} onPress={() => setAccPickerOpen(false)} />
-            <View style={styles.modalSheetWrap} pointerEvents="box-none">
+            <View style={[styles.modalSheetWrap, { pointerEvents: "box-none" as any }]}>
               <GlassPanel style={styles.modalSheet} contentStyle={styles.modalSheetInner} borderRadius={22} intensity={66}>
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalTitle}>Choose accommodation</Text>
@@ -821,7 +822,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
           onRequestClose={() => setStayDetailPicker(null)}
         >
           <Pressable style={styles.modalOverlay} onPress={() => setStayDetailPicker(null)} />
-          <View style={styles.modalSheetWrap} pointerEvents="box-none">
+          <View style={[styles.modalSheetWrap, { pointerEvents: "box-none" as any }]}>
             <GlassPanel style={styles.modalSheet} contentStyle={styles.modalSheetInner} borderRadius={22} intensity={66}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>
@@ -1009,7 +1010,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
             </View>
 
             {paymentMethod === "gcash" ? (
-              <View style={styles.qrBlock} pointerEvents="box-none">
+              <View style={[styles.qrBlock, { pointerEvents: "box-none" as any }]}>
                 <Text style={styles.mutedSmall}>Send payment to</Text>
                 {gcashAccountName ? <Text style={styles.qrHint}>{gcashAccountName}</Text> : null}
                 {gcashAccountNumber ? <Text style={styles.qrHint}>{gcashAccountNumber}</Text> : gcashLabel ? <Text style={styles.qrHint}>{gcashLabel}</Text> : null}
@@ -1023,7 +1024,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
               </View>
             ) : null}
             {paymentMethod === "maya" ? (
-              <View style={styles.qrBlock} pointerEvents="box-none">
+              <View style={[styles.qrBlock, { pointerEvents: "box-none" as any }]}>
                 <Text style={styles.mutedSmall}>Send payment to</Text>
                 {mayaAccountName ? <Text style={styles.qrHint}>{mayaAccountName}</Text> : null}
                 {mayaAccountNumber ? <Text style={styles.qrHint}>{mayaAccountNumber}</Text> : mayaLabel ? <Text style={styles.qrHint}>{mayaLabel}</Text> : null}
@@ -1116,7 +1117,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         onRequestClose={() => setIosDateModal(null)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setIosDateModal(null)} />
-        <View style={styles.modalSheetWrap} pointerEvents="box-none">
+        <View style={[styles.modalSheetWrap, { pointerEvents: "box-none" as any }]}>
           <GlassPanel style={styles.modalSheet} contentStyle={styles.modalSheetInner} borderRadius={22} intensity={66}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
@@ -1370,11 +1371,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 28,
     paddingBottom: 24,
-    shadowColor: "#0f172a",
-    shadowOpacity: 0.12,
-    shadowRadius: 32,
-    shadowOffset: { width: 0, height: 16 },
-    elevation: 16,
+    ...shadowCompat({ color: "#0f172a", opacity: 0.12, radius: 32, offsetY: 16, elevation: 16 }),
   },
   doneIconSolid: {
     alignSelf: "center",
@@ -1470,11 +1467,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.55)",
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
+    ...shadowCompat({ opacity: 0.08, radius: 3, offsetY: 1, elevation: 2 }),
   },
   payCardLogoImg: {
     width: 34,

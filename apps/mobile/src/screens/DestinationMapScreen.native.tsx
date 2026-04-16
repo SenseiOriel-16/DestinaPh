@@ -13,13 +13,15 @@ import {
   type LatLng,
 } from "../lib/destinationMapUtils";
 import { openGoogleMapsDirections } from "../lib/mapExternal";
+import { recordVisitIntentAndStartConfirmation } from "../lib/visitConfirmation";
 import { colors } from "../theme/colors";
+import { shadowCompat, textShadowCompat } from "../lib/rnWebStyleCompat";
 import { GlassPanel } from "../ui/GlassPanel";
 
 type Props = NativeStackScreenProps<RootStackParamList, "DestinationMap">;
 
 export function DestinationMapScreen({ route, navigation }: Props) {
-  const { title, destLat, destLng } = route.params;
+  const { title, destLat, destLng, businessId, categoryName } = route.params;
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
   const [userLoc, setUserLoc] = useState<LatLng | null>(null);
@@ -96,6 +98,17 @@ export function DestinationMapScreen({ route, navigation }: Props) {
   }, [loading, userLoc, destination, routeCoords, initialRegion]);
 
   const openGoogleDirections = () => {
+    if (businessId) {
+      const requiresOrder = (categoryName ?? "").toLowerCase().includes("food");
+      void recordVisitIntentAndStartConfirmation({
+        businessId,
+        source: "google_maps",
+        categoryName: categoryName ?? null,
+        destLat,
+        destLng,
+        requireFoodOrder: requiresOrder,
+      });
+    }
     void openGoogleMapsDirections(destLat, destLng);
   };
 
@@ -156,7 +169,7 @@ export function DestinationMapScreen({ route, navigation }: Props) {
 
       <View style={[styles.bottomCard, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <BlurView intensity={58} tint="light" style={StyleSheet.absoluteFill} />
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.bottomVeil]} />
+        <View style={[StyleSheet.absoluteFill, styles.bottomVeil, { pointerEvents: "none" as any }]} />
         <View style={styles.summaryRow}>
           <Text style={styles.summaryIcon}>🚗</Text>
           <View style={{ flex: 1 }}>
@@ -208,9 +221,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "800",
     fontSize: 17,
-    textShadowColor: "rgba(0,0,0,0.45)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    ...textShadowCompat({ color: "rgba(0,0,0,0.45)", offsetY: 1, radius: 4 }),
   },
   loadingBanner: {
     position: "absolute",
@@ -247,11 +258,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderTopWidth: StyleSheet.hairlineWidth * 2,
     borderTopColor: "rgba(255,255,255,0.55)",
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: -8 },
-    elevation: 14,
+    ...shadowCompat({ opacity: 0.2, radius: 18, offsetY: -8, elevation: 14 }),
   },
   bottomVeil: {
     backgroundColor: "rgba(255,255,255,0.10)",

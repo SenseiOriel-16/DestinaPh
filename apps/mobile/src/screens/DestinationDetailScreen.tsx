@@ -31,6 +31,7 @@ import { colors } from "../theme/colors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MapPinPreview } from "../components/MapPinPreview";
 import { openGoogleMapsDirections, openTurnByTurnNavigation } from "../lib/mapExternal";
+import { recordVisitIntentAndStartConfirmation } from "../lib/visitConfirmation";
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<HomeStackParamList, "Detail">,
@@ -428,8 +429,16 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
 
   const openInAppMap = () => {
     if (lat == null || lng == null) return;
-    trackListingIntentVisit(id);
-    navigation.navigate("DestinationMap", { title, destLat: lat, destLng: lng });
+    const requiresOrder = (categoryName ?? "").toLowerCase().includes("food");
+    void recordVisitIntentAndStartConfirmation({
+      businessId: id,
+      source: "in_app_map",
+      categoryName,
+      destLat: lat,
+      destLng: lng,
+      requireFoodOrder: requiresOrder,
+    });
+    navigation.navigate("DestinationMap", { title, destLat: lat, destLng: lng, businessId: id, categoryName });
   };
 
   const heroSlideW = screenW;
@@ -742,7 +751,15 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
               style={[styles.navPrimary, lat == null && styles.navDisabled]}
               onPress={() => {
                 if (lat == null || lng == null) return;
-                trackListingIntentVisit(id);
+                const requiresOrder = (categoryName ?? "").toLowerCase().includes("food");
+                void recordVisitIntentAndStartConfirmation({
+                  businessId: id,
+                  source: "navigate",
+                  categoryName,
+                  destLat: lat,
+                  destLng: lng,
+                  requireFoodOrder: requiresOrder,
+                });
                 void openTurnByTurnNavigation(lat, lng);
               }}
               disabled={lat == null || lng == null}
@@ -757,7 +774,15 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
               style={[styles.navSecondary, lat == null && styles.navDisabled]}
               onPress={() => {
                 if (lat == null || lng == null) return;
-                trackListingIntentVisit(id);
+                const requiresOrder = (categoryName ?? "").toLowerCase().includes("food");
+                void recordVisitIntentAndStartConfirmation({
+                  businessId: id,
+                  source: "google_maps",
+                  categoryName,
+                  destLat: lat,
+                  destLng: lng,
+                  requireFoodOrder: requiresOrder,
+                });
                 void openGoogleMapsDirections(lat, lng);
               }}
               disabled={lat == null || lng == null}

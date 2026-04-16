@@ -1,13 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ActivityIndicator,
   Alert,
   Animated,
   Easing,
+  ImageBackground,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,11 +20,14 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useItinerary } from "../context/ItineraryContext";
 import { colors } from "../theme/colors";
+import { shadowCompat } from "../lib/rnWebStyleCompat";
 import * as Location from "expo-location";
 import { supabase } from "../lib/supabase";
 import { firstPhotoPublicUrl } from "../lib/businessDisplay";
 import { ratingParts } from "../lib/businessRatingDisplay";
 import { haversineKm } from "../lib/geo";
+import { LinearGradient } from "expo-linear-gradient";
+import { HERO_BACKGROUND } from "../constants/heroBackground";
 import {
   rankCandidates,
   type BizCandidate,
@@ -32,6 +36,8 @@ import {
   type ResortPeriod,
 } from "../lib/itineraryGenerator";
 
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
 function peso(n: number) {
   return `₱${Math.round(n).toLocaleString("en-PH")}`;
 }
@@ -39,33 +45,33 @@ function peso(n: number) {
 function usePressMotion() {
   const scale = useMemo(() => new Animated.Value(1), []);
   const shakeX = useMemo(() => new Animated.Value(0), []);
+  const useNativeDriver = Platform.OS !== "web";
 
   const bounceAndShake = useCallback(() => {
-    // Grow briefly, then return, plus a small shake.
     shakeX.setValue(0);
     Animated.parallel([
       Animated.sequence([
         Animated.timing(scale, {
-          toValue: 1.06,
-          duration: 90,
-          useNativeDriver: true,
+          toValue: 1.07,
+          duration: 80,
+          useNativeDriver,
           easing: Easing.out(Easing.quad),
         }),
         Animated.spring(scale, {
           toValue: 1,
-          useNativeDriver: true,
-          speed: 20,
-          bounciness: 6,
+          useNativeDriver,
+          speed: 22,
+          bounciness: 8,
         }),
       ]),
       Animated.sequence([
-        Animated.timing(shakeX, { toValue: 1, duration: 40, useNativeDriver: true }),
-        Animated.timing(shakeX, { toValue: -1, duration: 40, useNativeDriver: true }),
-        Animated.timing(shakeX, { toValue: 1, duration: 40, useNativeDriver: true }),
-        Animated.timing(shakeX, { toValue: 0, duration: 40, useNativeDriver: true }),
+        Animated.timing(shakeX, { toValue: 1, duration: 35, useNativeDriver }),
+        Animated.timing(shakeX, { toValue: -1, duration: 35, useNativeDriver }),
+        Animated.timing(shakeX, { toValue: 1, duration: 35, useNativeDriver }),
+        Animated.timing(shakeX, { toValue: 0, duration: 35, useNativeDriver }),
       ]),
     ]).start();
-  }, [scale, shakeX]);
+  }, [scale, shakeX, useNativeDriver]);
 
   const transform = useMemo(
     () => [
@@ -83,56 +89,154 @@ function usePressMotion() {
   return { bounceAndShake, transform };
 }
 
-function IconChip({
+// ─── SectionRow ───────────────────────────────────────────────────────────────
+
+function SectionRow({
+  left,
+  right,
+}: {
+  left: string;
+  right?: { label: string; onPress: () => void };
+}) {
+  return (
+    <View style={styles.sectionRow}>
+      <Text style={styles.sectionTitle}>{left}</Text>
+      {right ? (
+        <Pressable
+          onPress={right.onPress}
+          hitSlop={10}
+          style={({ pressed }) => [styles.sectionRight, pressed && { opacity: 0.8 }]}
+        >
+          <Text style={styles.sectionRightTxt}>{right.label}</Text>
+          <Ionicons name="chevron-forward" size={14} color={colors.primaryTealDeep} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+// ─── CategoryCard ─────────────────────────────────────────────────────────────
+
+function CategoryCard({
   active,
-  icon,
-  label,
+  title,
+  emoji,
+  gradient,
   onPress,
-  scheme = "neutral",
-  variant = "chip",
-  chipStyle,
 }: {
   active: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
+  title: string;
+  emoji: string;
+  gradient: [string, string, string];
   onPress: () => void;
-  scheme?: "neutral" | "resort" | "nature" | "food" | "day" | "night" | "budget" | "people" | "prio";
-  variant?: "chip" | "card";
-  chipStyle?: ViewStyle;
 }) {
   const m = usePressMotion();
-  const palette = useMemo(() => {
-    const mk = (activeBg: string, idleBg: string, activeBorder: string, idleBorder: string, activeIcon: string, idleIcon: string) => ({
-      activeBg,
-      idleBg,
-      activeBorder,
-      idleBorder,
-      activeIcon,
-      idleIcon,
-    });
-    switch (scheme) {
-      case "resort":
-        return mk("rgba(14, 201, 182, 0.18)", "rgba(14, 201, 182, 0.10)", "rgba(14, 201, 182, 0.32)", "rgba(148, 163, 184, 0.24)", colors.primaryTealDeep, "#475569");
-      case "nature":
-        return mk("rgba(34, 197, 94, 0.18)", "rgba(34, 197, 94, 0.10)", "rgba(34, 197, 94, 0.32)", "rgba(148, 163, 184, 0.24)", "#16a34a", "#475569");
-      case "food":
-        return mk("rgba(236, 72, 153, 0.18)", "rgba(236, 72, 153, 0.10)", "rgba(236, 72, 153, 0.32)", "rgba(148, 163, 184, 0.24)", "#db2777", "#475569");
-      case "day":
-        return mk("rgba(251, 146, 60, 0.22)", "rgba(251, 146, 60, 0.12)", "rgba(251, 146, 60, 0.35)", "rgba(148, 163, 184, 0.24)", "#f97316", "#475569");
-      case "night":
-        return mk("rgba(59, 130, 246, 0.20)", "rgba(59, 130, 246, 0.10)", "rgba(59, 130, 246, 0.32)", "rgba(148, 163, 184, 0.24)", "#2563eb", "#475569");
-      case "budget":
-        return mk("rgba(236, 72, 153, 0.18)", "rgba(236, 72, 153, 0.08)", "rgba(236, 72, 153, 0.30)", "rgba(148, 163, 184, 0.24)", "#111827", "#475569");
-      case "people":
-        return mk("rgba(2, 132, 199, 0.18)", "rgba(2, 132, 199, 0.08)", "rgba(2, 132, 199, 0.30)", "rgba(148, 163, 184, 0.24)", "#0284c7", "#475569");
-      case "prio":
-        return mk("rgba(11, 184, 196, 0.16)", "rgba(15, 23, 42, 0.04)", "rgba(11, 184, 196, 0.34)", "rgba(148, 163, 184, 0.24)", colors.primaryTealDeep, "#475569");
-      default:
-        return mk("rgba(11, 184, 196, 0.14)", "rgba(15, 23, 42, 0.04)", "rgba(11, 184, 196, 0.30)", "rgba(148, 163, 184, 0.24)", colors.primaryTealDeep, "#475569");
-    }
-  }, [scheme]);
+  return (
+    <Pressable
+      onPress={() => {
+        m.bounceAndShake();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.catCardHit,
+        pressed && { opacity: 0.93 },
+      ]}
+    >
+      <Animated.View style={{ transform: m.transform }}>
+        <LinearGradient
+          colors={gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.catCard, active && styles.catCardActive]}
+        >
+          {active && (
+            <View style={styles.catActiveRing} />
+          )}
+          <View style={styles.catEmojiWrap}>
+            <Text style={styles.catEmoji}>{emoji}</Text>
+          </View>
+          <Text style={styles.catTitle} numberOfLines={2}>
+            {title}
+          </Text>
+          {active && (
+            <View style={styles.catCheckDot}>
+              <Ionicons name="checkmark" size={10} color="#fff" />
+            </View>
+          )}
+        </LinearGradient>
+      </Animated.View>
+    </Pressable>
+  );
+}
 
-  const iconBadgeBg = active ? palette.activeBg : "rgba(15, 23, 42, 0.03)";
+// ─── BudgetChip ───────────────────────────────────────────────────────────────
+
+function BudgetChip({
+  active,
+  label,
+  emoji,
+  gradient,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  emoji: string;
+  gradient: [string, string];
+  onPress: () => void;
+}) {
+  const m = usePressMotion();
+  return (
+    <Pressable
+      onPress={() => {
+        m.bounceAndShake();
+        onPress();
+      }}
+      style={({ pressed }) => [styles.budgetChipHit, pressed && { opacity: 0.93 }]}
+    >
+      <Animated.View style={{ transform: m.transform, flex: 1 }}>
+        <LinearGradient
+          colors={active ? gradient : ["#F8F9FF", "#F0F3FF"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.budgetChip, active && styles.budgetChipActive]}
+        >
+          <Text style={styles.budgetChipEmoji}>{emoji}</Text>
+          <Text style={[styles.budgetChipTxt, active && styles.budgetChipTxtActive]}>
+            {label}
+          </Text>
+        </LinearGradient>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// ─── PriorityChip ─────────────────────────────────────────────────────────────
+
+function PriorityChip({
+  rank,
+  priorityKey,
+  onPress,
+}: {
+  rank: 1 | 2 | 3;
+  priorityKey: PriorityKey;
+  onPress: () => void;
+}) {
+  const m = usePressMotion();
+
+  const rankColors: Record<1 | 2 | 3, { bg: string; dot: string; label: string }> = {
+    1: { bg: "rgba(4,120,126,0.10)", dot: colors.primaryTeal, label: "1st" },
+    2: { bg: "rgba(255,183,3,0.12)", dot: colors.star, label: "2nd" },
+    3: { bg: "rgba(46,155,76,0.12)", dot: colors.accentGreen, label: "3rd" },
+  };
+
+  const prioMeta: Record<PriorityKey, { icon: keyof typeof Ionicons.glyphMap; label: string; color: string }> = {
+    distance: { icon: "navigate", label: "Distance", color: colors.primaryTealDeep },
+    popularity: { icon: "star", label: "Popularity", color: colors.star },
+    budget: { icon: "cash", label: "Budget", color: colors.accentGreen },
+  };
+
+  const rc = rankColors[rank];
+  const pm = prioMeta[priorityKey];
 
   return (
     <Pressable
@@ -140,46 +244,74 @@ function IconChip({
         m.bounceAndShake();
         onPress();
       }}
-      style={({ pressed }) => [styles.genChipHit, pressed && { opacity: 0.95 }, variant === "card" && { flex: 1 }]}
+      style={[styles.prioChipHit]}
+    >
+      <Animated.View style={[styles.prioChip, { transform: m.transform }]}>
+        <View style={[styles.prioBadge, { backgroundColor: rc.bg }]}>
+          <View style={[styles.prioDot, { backgroundColor: rc.dot }]} />
+          <Text style={[styles.prioBadgeTxt, { color: rc.dot }]}>{rc.label}</Text>
+        </View>
+        <View style={styles.prioInner}>
+          <Ionicons name={pm.icon} size={14} color={pm.color} />
+          <Text style={[styles.prioLabel, { color: pm.color }]}>{pm.label}</Text>
+          <Ionicons name="chevron-down" size={13} color={pm.color} />
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// ─── MuniChip ─────────────────────────────────────────────────────────────────
+
+function MuniChip({
+  active,
+  name,
+  onPress,
+}: {
+  active: boolean;
+  name: string;
+  onPress: () => void;
+}) {
+  const m = usePressMotion();
+  return (
+    <Pressable
+      onPress={() => {
+        m.bounceAndShake();
+        onPress();
+      }}
+      style={({ pressed }) => [pressed && { opacity: 0.92 }]}
     >
       <Animated.View
-        style={[
-          variant === "card" ? styles.genCardBtn : styles.genChip,
-          chipStyle,
-          {
-            backgroundColor: active ? palette.activeBg : palette.idleBg,
-            borderColor: active ? palette.activeBorder : palette.idleBorder,
-          },
-          { transform: m.transform },
-        ]}
+        style={[styles.muniChip, active && styles.muniChipActive, { transform: m.transform }]}
       >
-        {variant === "card" ? (
-          <>
-            <View
-              style={[
-                styles.iconBadge,
-                {
-                  backgroundColor: iconBadgeBg,
-                  borderColor: active ? palette.activeBorder : "rgba(148, 163, 184, 0.20)",
-                },
-              ]}
-            >
-              <Ionicons name={icon} size={22} color={active ? palette.activeIcon : palette.idleIcon} />
-            </View>
-            <Text style={[styles.genCardBtnTxt, active && styles.genCardBtnTxtOn]} numberOfLines={2}>
-              {label}
-            </Text>
-          </>
+        {active ? (
+          <LinearGradient
+            colors={["rgba(4,120,126,0.18)", "rgba(14,201,182,0.14)"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.muniIconBg}
+          >
+            <Ionicons name="business" size={15} color={colors.primaryTealDeep} />
+          </LinearGradient>
         ) : (
-          <>
-            <Ionicons name={icon} size={18} color={active ? palette.activeIcon : palette.idleIcon} style={{ marginRight: 6 }} />
-            <Text style={[styles.genChipTxt, active && styles.genChipTxtOn]}>{label}</Text>
-          </>
+          <View style={[styles.muniIconBg, { backgroundColor: "#F3F4F6" }]}>
+            <Ionicons name="business" size={15} color="#9CA3AF" />
+          </View>
+        )}
+        <Text style={[styles.muniTxt, active && styles.muniTxtActive]} numberOfLines={1}>
+          {name}
+        </Text>
+        {active && (
+          <View style={styles.muniCheck}>
+            <Ionicons name="checkmark" size={11} color="#fff" />
+          </View>
         )}
       </Animated.View>
     </Pressable>
   );
 }
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export function ItineraryScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -201,7 +333,6 @@ export function ItineraryScreen({ navigation }: any) {
 
   const setPriority = useCallback(
     (slot: 1 | 2 | 3, key: PriorityKey) => {
-      // Keep priorities unique. If the chosen key is already used in another slot, swap values.
       if (slot === 1) {
         if (key === prio2) setPrio2(prio1);
         else if (key === prio3) setPrio3(prio1);
@@ -214,7 +345,6 @@ export function ItineraryScreen({ navigation }: any) {
         setPrio2(key);
         return;
       }
-      // slot === 3
       if (key === prio1) setPrio1(prio3);
       else if (key === prio2) setPrio2(prio3);
       setPrio3(key);
@@ -228,9 +358,6 @@ export function ItineraryScreen({ navigation }: any) {
     return budgetValue;
   }, [budgetInput, budgetValue]);
 
-  const isNature = categorySlug === "nature-adventure";
-
-  // This screen remains mounted in tabs; reset to planning whenever user returns.
   useFocusEffect(
     useCallback(() => {
       setView("form");
@@ -254,9 +381,13 @@ export function ItineraryScreen({ navigation }: any) {
       const m = Array.isArray(raw) ? raw[0] : raw;
       if (m?.id && m.name) map.set(m.id, { id: m.id, name: m.name });
     }
-    const list = [...map.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+    const list = [...map.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
     setMunicipalities(list);
-    setMunicipalityId((prev) => (prev && list.some((x) => x.id === prev) ? prev : list[0]?.id ?? ""));
+    setMunicipalityId((prev) =>
+      prev && list.some((x) => x.id === prev) ? prev : list[0]?.id ?? "",
+    );
   }, []);
 
   useEffect(() => {
@@ -275,11 +406,13 @@ export function ItineraryScreen({ navigation }: any) {
     try {
       const perm = await Location.requestForegroundPermissionsAsync();
       if (perm.status !== "granted") {
-        Alert.alert("Location required", "Please allow location access to generate an itinerary by distance.");
+        Alert.alert("Location required", "Please allow location access to generate an itinerary.");
         setView("form");
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
       const origin = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
 
       const { data, error } = await supabase
@@ -291,8 +424,10 @@ export function ItineraryScreen({ navigation }: any) {
         .eq("allow_reservations", true)
         .eq("municipality_id", municipalityId)
         .order("sort_order", { ascending: true, foreignTable: "business_photos" });
+
       if (error || !data) {
         Alert.alert("Error", error?.message ?? "Could not load destinations.");
+        setView("form");
         return;
       }
 
@@ -327,7 +462,9 @@ export function ItineraryScreen({ navigation }: any) {
 
       const narrowedCandidates =
         categorySlug === "nature-adventure" && natureSubcategory !== "all"
-          ? candidates.filter((c) => String((c as any).subcategory ?? "") === natureSubcategory)
+          ? candidates.filter(
+              (c) => String((c as any).subcategory ?? "") === natureSubcategory,
+            )
           : candidates;
 
       const prefs = {
@@ -343,10 +480,10 @@ export function ItineraryScreen({ navigation }: any) {
       };
 
       const ranked = rankCandidates(narrowedCandidates, prefs).slice(0, 5);
+
       if (ranked.length === 0) {
         setStops([]);
 
-        // If Budget is 1st priority, suggest closest-to-budget options (relaxed budget constraint).
         const budgetFirst = prio1 === "budget";
         const budgetTarget =
           categorySlug === "resorts-leisure"
@@ -355,20 +492,28 @@ export function ItineraryScreen({ navigation }: any) {
               ? prefs.foodBudgetPerPerson
               : null;
 
-        if (budgetFirst && typeof budgetTarget === "number" && Number.isFinite(budgetTarget) && budgetTarget > 0) {
+        if (
+          budgetFirst &&
+          typeof budgetTarget === "number" &&
+          Number.isFinite(budgetTarget) &&
+          budgetTarget > 0
+        ) {
           const target = Math.round(budgetTarget);
 
           const feeForResort = (b: BizCandidate): number | null => {
-            const periodOk = prefs.resortPeriod === "day" ? b.operatingDay : b.operatingNight;
+            const periodOk =
+              prefs.resortPeriod === "day" ? b.operatingDay : b.operatingNight;
             if (!periodOk) return null;
             const fee =
-              prefs.resortPeriod === "day"
-                ? b.entranceFeeDay
-                : b.entranceFeeNight;
-            if (typeof fee === "number" && Number.isFinite(fee) && fee >= 0) return Math.round(fee);
-            if (typeof b.entranceFeeDefault === "number" && Number.isFinite(b.entranceFeeDefault) && b.entranceFeeDefault >= 0) {
+              prefs.resortPeriod === "day" ? b.entranceFeeDay : b.entranceFeeNight;
+            if (typeof fee === "number" && Number.isFinite(fee) && fee >= 0)
+              return Math.round(fee);
+            if (
+              typeof b.entranceFeeDefault === "number" &&
+              Number.isFinite(b.entranceFeeDefault) &&
+              b.entranceFeeDefault >= 0
+            )
               return Math.round(b.entranceFeeDefault);
-            }
             return null;
           };
 
@@ -409,13 +554,18 @@ export function ItineraryScreen({ navigation }: any) {
                 return null;
               }
 
-              const distKm = haversineKm(prefs.origin, { latitude: b.latitude, longitude: b.longitude });
-              const pop = Math.max(0, Math.floor(Number(b.ratingCount ?? 0) || 0));
+              const distKm = haversineKm(prefs.origin, {
+                latitude: b.latitude,
+                longitude: b.longitude,
+              });
+              const pop = Math.max(
+                0,
+                Math.floor(Number(b.ratingCount ?? 0) || 0),
+              );
               return { b, diff, distKm, pop, entranceFeePesos, estPerPerson };
             })
             .filter((x): x is NonNullable<typeof x> => !!x)
             .sort((a, b) => {
-              // Closest budget first, then distance, then popularity.
               if (a.diff !== b.diff) return a.diff - b.diff;
               if (a.distKm !== b.distKm) return a.distKm - b.distKm;
               return b.pop - a.pop;
@@ -441,7 +591,9 @@ export function ItineraryScreen({ navigation }: any) {
                 estimatedPerPersonPesos: x.estPerPerson,
                 estimatedEntrancePesos: x.entranceFeePesos,
                 estimatedTotalPesos:
-                  prefs.categorySlug === "resorts-leisure" && x.entranceFeePesos != null ? x.entranceFeePesos : null,
+                  prefs.categorySlug === "resorts-leisure" && x.entranceFeePesos != null
+                    ? x.entranceFeePesos
+                    : null,
               })),
             );
             setView("results");
@@ -499,996 +651,920 @@ export function ItineraryScreen({ navigation }: any) {
     natureSubcategory,
   ]);
 
-  const content = useMemo(() => {
-    if (view === "loading") {
-      return (
-        <View style={styles.loadingWrap}>
-          <View style={styles.loadingHead}>
-            <Text style={styles.loadingTitle}>Generating itinerary…</Text>
-            <Text style={styles.loadingSub}>Finding the best destinations for your preferences.</Text>
-          </View>
-          {[0, 1, 2, 3].map((i) => (
-            <View key={i} style={styles.loadingCard} />
-          ))}
+  // ─── Loading View ───────────────────────────────────────────────────────────
+
+  const loadingContent = (
+    <View style={styles.loadingWrap}>
+      <View style={styles.loadingHead}>
+        <Text style={styles.loadingTitle}>✨ Generating your itinerary…</Text>
+        <Text style={styles.loadingSub}>Finding the best destinations for your preferences.</Text>
+      </View>
+      {[0, 1, 2, 3].map((i) => (
+        <View key={i} style={[styles.loadingCard, { opacity: 1 - i * 0.18 }]} />
+      ))}
+    </View>
+  );
+
+  // ─── Results View ───────────────────────────────────────────────────────────
+
+  const resultsContent = (
+    <View>
+      {/* Results header */}
+      <View style={styles.resultsHead}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.resultsTitle}>🗺️ Generated Results</Text>
+          <Text style={styles.resultsSub}>
+            {stops.length} destination{stops.length === 1 ? "" : "s"} matched
+          </Text>
         </View>
-      );
-    }
+        <Pressable
+          onPress={() => setView("form")}
+          style={({ pressed }) => [styles.regenBtn, pressed && { opacity: 0.85 }]}
+        >
+            <LinearGradient
+              colors={["rgba(4,120,126,0.12)", "rgba(14,201,182,0.10)"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.regenBtnInner}
+          >
+              <Ionicons name="refresh-outline" size={15} color={colors.primaryTealDeep} />
+            <Text style={styles.regenBtnTxt}>Regenerate</Text>
+          </LinearGradient>
+        </Pressable>
+      </View>
 
-    if (view === "results") {
-      return (
-        <View>
-          <View style={styles.resultsHead}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.resultsTitle}>Generated Results</Text>
-              <Text style={styles.resultsSub}>
-                {stops.length} destination{stops.length === 1 ? "" : "s"} matched
-              </Text>
-            </View>
+      {noMatchNote ? (
+        <View style={styles.noteBox}>
+          <Ionicons name="information-circle" size={18} color={colors.primaryTealDeep} />
+          <Text style={styles.noteText}>{noMatchNote}</Text>
+        </View>
+      ) : null}
+
+      <View style={{ marginTop: 8 }}>
+        {stops.map((s, idx) => {
+          const rankEmojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+          const rankColors = ["#F59E0B", "#94A3B8", "#D97706", "#6B7280", "#6B7280"];
+          return (
             <Pressable
-              onPress={() => setView("form")}
-              style={({ pressed }) => [styles.smallBtn, pressed && { transform: [{ scale: 0.98 }] }]}
+              key={s.id}
+              style={({ pressed }) => [styles.resultCard, pressed && { opacity: 0.95 }]}
+              onPress={() => navigation?.navigate?.("Detail", { id: s.id })}
             >
-              <Ionicons name="refresh-outline" size={18} color={colors.primaryTealDeep} />
-              <Text style={styles.smallBtnTxt}>Generate again</Text>
-            </Pressable>
-          </View>
-
-          <View style={{ marginTop: 10 }}>
-            {noMatchNote ? (
-              <View style={styles.noteBox}>
-                <Ionicons name="information-circle-outline" size={18} color={colors.primaryTealDeep} />
-                <Text style={styles.noteText}>{noMatchNote}</Text>
+              {/* Rank badge */}
+              <View style={[styles.rankBadge, { borderColor: rankColors[idx] + "55" }]}>
+                <Text style={styles.rankEmoji}>{rankEmojis[idx] ?? `#${idx + 1}`}</Text>
               </View>
-            ) : null}
 
-            {stops.map((s, idx) => (
-              <Pressable
-                key={s.id}
-                style={({ pressed }) => [styles.resultCard, pressed && { opacity: 0.95 }]}
-                onPress={() => navigation?.navigate?.("Detail", { id: s.id })}
-              >
-                <View style={styles.topBadge} pointerEvents="none">
-                  <Text style={styles.topBadgeTxt}>Top {idx + 1}</Text>
+              {/* Thumbnail */}
+              {s.photoUrl ? (
+                <Image source={{ uri: s.photoUrl }} style={styles.resultThumb} />
+              ) : (
+                <View style={[styles.resultThumb, styles.resultThumbPh]}>
+                  <LinearGradient
+                    colors={["rgba(4,120,126,0.10)", "rgba(14,201,182,0.10)"]}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <Ionicons name="image-outline" size={22} color={colors.primaryTealDeep} />
                 </View>
-                <View style={styles.resultIdx}>
-                  <Text style={styles.resultIdxTxt}>{idx + 1}</Text>
-                </View>
-                {s.photoUrl ? (
-                  <Image source={{ uri: s.photoUrl }} style={styles.resultThumb} />
-                ) : (
-                  <View style={[styles.resultThumb, styles.resultThumbPh]}>
-                    <Ionicons name="image-outline" size={20} color={colors.muted2} />
-                  </View>
-                )}
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.resultName} numberOfLines={2}>
-                    {s.name}
-                  </Text>
-                  <Text style={styles.resultCat}>{s.categoryName ?? "Destination"}</Text>
-                  <View style={styles.metaRow}>
-                    {([prio1, prio2, prio3] as const).map((k) => {
-                      if (k === "distance") {
-                        return typeof s.distanceKm === "number" ? (
-                          <View key={k} style={[styles.metaPill, styles.metaPillTeal]}>
-                            <Ionicons name="navigate-outline" size={13} color={colors.primaryTealDeep} />
-                            <Text style={[styles.metaPillTxt, styles.metaPillTxtTeal]}>
-                              {s.distanceKm < 1
-                                ? `${Math.round(s.distanceKm * 1000)} m`
-                                : `${s.distanceKm.toFixed(1)} km`}
-                            </Text>
-                          </View>
-                        ) : (
-                          <View key={k} style={[styles.metaPill, styles.metaPillTeal]}>
-                            <Ionicons name="navigate-outline" size={13} color={colors.primaryTealDeep} />
-                            <Text style={[styles.metaPillTxt, styles.metaPillTxtTeal]}>—</Text>
-                          </View>
-                        );
-                      }
+              )}
 
-                      if (k === "popularity") {
-                        const p = ratingParts(s.ratingAverage, s.ratingCount);
-                        if (p.kind === "new") {
-                          return (
-                            <View key={k} style={[styles.metaPill, styles.metaPillStar]}>
-                              <Ionicons name="star" size={13} color={colors.star} />
-                              <Text style={styles.metaPillTxt}>New</Text>
-                            </View>
-                          );
-                        }
-                        return (
-                          <View key={k} style={[styles.metaPill, styles.metaPillStar]}>
-                            <Ionicons name="star" size={13} color={colors.star} />
-                            <Text style={styles.metaPillTxt}>
-                              {p.averageText} · {p.count} rating{p.count === 1 ? "" : "s"}
-                            </Text>
-                          </View>
-                        );
-                      }
+              {/* Info */}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.resultName} numberOfLines={2}>{s.name}</Text>
+                <Text style={styles.resultCat}>{s.categoryName ?? "Destination"}</Text>
 
-                      // k === "budget"
-                      const perPerson =
-                        typeof s.estimatedPerPersonPesos === "number"
-                          ? Math.round(s.estimatedPerPersonPesos)
-                          : typeof s.estimatedEntrancePesos === "number" && typeof s.estimatedGroupSize === "number"
-                            ? Math.round(s.estimatedEntrancePesos / Math.max(1, s.estimatedGroupSize))
-                            : typeof s.estimatedEntrancePesos === "number"
-                              ? Math.round(s.estimatedEntrancePesos)
-                              : null;
-
+                <View style={styles.metaRow}>
+                  {([prio1, prio2, prio3] as const).map((k) => {
+                    if (k === "distance") {
                       return (
-                        <View key={k} style={[styles.metaPill, styles.metaPillBudget]}>
-                          <Ionicons name="cash-outline" size={13} color={colors.navy} />
-                          <Text style={styles.metaPillTxt}>
-                            {perPerson != null ? `${peso(perPerson)}` : "—"}
-                            {typeof s.estimatedPerPersonPesos === "number" ? " / person" : ""}
+                        <View key={k} style={[styles.metaPill, { backgroundColor: "rgba(4,120,126,0.10)", borderColor: "rgba(4,120,126,0.20)" }]}>
+                          <Ionicons name="navigate" size={11} color={colors.primaryTealDeep} />
+                          <Text style={[styles.metaPillTxt, { color: colors.primaryTealDeep }]}>
+                            {typeof s.distanceKm === "number"
+                              ? s.distanceKm < 1
+                                ? `${Math.round(s.distanceKm * 1000)} m`
+                                : `${s.distanceKm.toFixed(1)} km`
+                              : "—"}
                           </Text>
                         </View>
                       );
-                    })}
-                  </View>
-                  {typeof s.estimatedGroupSize === "number" ? (
-                    <Text style={styles.resultLineMuted}>Group: {s.estimatedGroupSize} person{s.estimatedGroupSize === 1 ? "" : "s"}</Text>
-                  ) : null}
-                  {typeof s.estimatedPerPersonPesos === "number" ? (
-                    <Text style={styles.resultLine}>
-                      Est cost: <Text style={styles.resultLineStrong}>{peso(s.estimatedPerPersonPesos)}</Text> / person
-                      {typeof s.estimatedGroupSize === "number" ? (
-                        <Text style={styles.resultLineMuted}>
-                          {" "}
-                          × {s.estimatedGroupSize} ={" "}
-                          <Text style={styles.resultLineStrong}>{peso(s.estimatedPerPersonPesos * s.estimatedGroupSize)}</Text>
-                        </Text>
-                      ) : null}
-                    </Text>
-                  ) : null}
-                  {typeof s.estimatedEntrancePesos === "number" && typeof s.estimatedGroupSize === "number" ? (
-                    <Text style={styles.resultLine}>
-                      Entrance:{" "}
-                      <Text style={styles.resultLineStrong}>
-                        {peso(Math.round(s.estimatedEntrancePesos / Math.max(1, s.estimatedGroupSize)))}
-                      </Text>{" "}
-                      × {s.estimatedGroupSize} = <Text style={styles.resultLineStrong}>{peso(s.estimatedEntrancePesos)}</Text>
-                    </Text>
-                  ) : typeof s.estimatedEntrancePesos === "number" ? (
-                    <Text style={styles.resultLine}>
-                      Entrance: <Text style={styles.resultLineStrong}>{peso(s.estimatedEntrancePesos)}</Text>
-                    </Text>
-                  ) : null}
-                  {typeof s.estimatedAccommodationPesos === "number" ? (
-                    <Text style={styles.resultLine}>
-                      Accommodation:{" "}
-                      <Text style={styles.resultLineStrong}>
-                        {s.estimatedAccommodationName ? s.estimatedAccommodationName : "Stay"}
-                      </Text>
-                      {s.estimatedAccommodationPax ? (
-                        <Text style={styles.resultLineMuted}> ({s.estimatedAccommodationPax})</Text>
-                      ) : null}{" "}
-                      <Text style={styles.resultLineMuted}>·</Text>{" "}
-                      <Text style={styles.resultLineStrong}>{peso(s.estimatedAccommodationPesos)}</Text>
-                      <Text style={styles.resultLineMuted}> / night (1 night)</Text>
-                    </Text>
-                  ) : null}
-                  {typeof s.estimatedTotalPesos === "number" ? (
-                    <Text style={styles.resultTotal}>
-                      Total: <Text style={styles.resultTotalStrong}>{peso(s.estimatedTotalPesos)}</Text>
-                      {typeof s.estimatedAccommodationPesos === "number" ? (
-                        <Text style={styles.resultLineMuted}> (est. 1 night)</Text>
-                      ) : null}
-                    </Text>
-                  ) : null}
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.muted2} />
-              </Pressable>
-            ))}
-
-            {stops.length === 0 ? (
-              fallbackCategory.length ? (
-                <View style={{ marginTop: 6 }}>
-                  {fallbackCategory.slice(0, 10).map((c) => (
-                    <Pressable
-                      key={c.id}
-                      style={({ pressed }) => [styles.resultCard, pressed && { opacity: 0.95 }]}
-                      onPress={() => {
-                        // Keep user inside results; open destination details.
-                        navigation?.navigate?.("Detail", { id: c.id });
-                      }}
-                    >
-                      {c.photoUrl ? (
-                        <Image source={{ uri: c.photoUrl }} style={styles.resultThumb} />
-                      ) : (
-                        <View style={[styles.resultThumb, styles.resultThumbPh]}>
-                          <Ionicons name="image-outline" size={20} color={colors.muted2} />
+                    }
+                    if (k === "popularity") {
+                      const p = ratingParts(s.ratingAverage, s.ratingCount);
+                      return (
+                        <View key={k} style={[styles.metaPill, { backgroundColor: "#FEF3C7", borderColor: "#FCD34D" }]}>
+                          <Ionicons name="star" size={11} color="#D97706" />
+                          <Text style={[styles.metaPillTxt, { color: "#92400E" }]}>
+                            {p.kind === "new" ? "New" : `${p.averageText} · ${p.count}`}
+                          </Text>
                         </View>
-                      )}
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={styles.resultName} numberOfLines={2}>
-                          {c.name}
-                        </Text>
-                        <Text style={styles.resultCat}>
-                          {c.categoryName ?? "Destination"}
-                          {c.municipalityName ? ` · ${c.municipalityName}` : ""}
+                      );
+                    }
+                    // budget
+                    const perPerson =
+                      typeof s.estimatedPerPersonPesos === "number"
+                        ? Math.round(s.estimatedPerPersonPesos)
+                        : typeof s.estimatedEntrancePesos === "number"
+                          ? Math.round(s.estimatedEntrancePesos)
+                          : null;
+                    return (
+                      <View key={k} style={[styles.metaPill, { backgroundColor: "#DCFCE7", borderColor: "#86EFAC" }]}>
+                        <Ionicons name="cash" size={11} color="#16A34A" />
+                        <Text style={[styles.metaPillTxt, { color: "#15803D" }]}>
+                          {perPerson != null ? peso(perPerson) : "—"}
                         </Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={20} color={colors.muted2} />
-                    </Pressable>
-                  ))}
-                  {fallbackCategory.length > 10 ? (
-                    <Text style={styles.empty}>
-                      Showing 10 of {fallbackCategory.length} destinations in this category. Adjust preferences to narrow results.
-                    </Text>
-                  ) : null}
+                    );
+                  })}
                 </View>
-              ) : (
-                <Text style={styles.empty}>
-                  No destinations found for this municipality and category. Try a different municipality or category.
-                </Text>
-              )
-            ) : null}
-          </View>
-        </View>
-      );
-    }
 
-    // view === "form"
-    return (
-      <View style={styles.genCard}>
-        <View style={styles.genTop}>
-          <Text style={styles.genTitle}>Generate itinerary</Text>
-          <Text style={styles.genSub}>Using current location (Modified A*).</Text>
-        </View>
-
-        <View style={styles.sectionHead}>
-          <Ionicons name="navigate-outline" size={16} color={colors.primaryTealDeep} />
-          <Text style={styles.sectionHeadTxt}>Using current location</Text>
-        </View>
-
-        <Text style={styles.genLabel}>Choose Municipality</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.genChipRow}>
-          {municipalities.map((m) => (
-            <IconChip
-              key={m.id}
-              active={municipalityId === m.id}
-              icon="location-outline"
-              label={m.name}
-              scheme="neutral"
-              onPress={() => setMunicipalityId(m.id)}
-            />
-          ))}
-        </ScrollView>
-
-        <Text style={styles.genLabel}>Choose Category</Text>
-        <View style={styles.categoryRow}>
-          {[
-            { id: "resorts-leisure", label: "Resort & Leisure", icon: "bed-outline" as const, scheme: "resort" as const },
-            { id: "nature-adventure", label: "Nature & Adventure", icon: "leaf-outline" as const, scheme: "nature" as const },
-            { id: "food-dining", label: "Food & Dining", icon: "restaurant-outline" as const, scheme: "food" as const },
-          ].map((c) => (
-            <View key={c.id} style={{ flex: 1 }}>
-              <IconChip
-                active={categorySlug === c.id}
-                icon={c.icon}
-                label={c.label}
-                scheme={c.scheme}
-                variant="card"
-                chipStyle={styles.equalCategoryCard}
-                onPress={() => {
-                  setCategorySlug(c.id);
-                  if (c.id !== "nature-adventure") setNatureSubcategory("all");
-                  setBudgetInput("");
-                  setBudgetValue(150);
-                }}
-              />
-            </View>
-          ))}
-        </View>
-
-        {isNature ? (
-          <>
-            <Text style={styles.genLabel}>Nature subcategory</Text>
-            <View style={styles.genChipRowWrap}>
-              {[
-                { id: "all" as const, label: "All" },
-                { id: "waterfalls-swimming" as const, label: "Waterfalls / Swimming" },
-                { id: "camping-sightseeing" as const, label: "Camping / Sightseeing" },
-              ].map((s) => (
-                <IconChip
-                  key={s.id}
-                  active={natureSubcategory === s.id}
-                  icon="options-outline"
-                  label={s.label}
-                  scheme="neutral"
-                  chipStyle={styles.equalBudgetChip}
-                  onPress={() => setNatureSubcategory(s.id)}
-                />
-              ))}
-            </View>
-          </>
-        ) : null}
-
-        {categorySlug === "resorts-leisure" ? (
-          <View style={styles.row2}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.genLabel}>Day / Night</Text>
-              <View style={styles.genChipRowWrap}>
-                {(["day", "night"] as const).map((p) => (
-                  <IconChip
-                    key={p}
-                    active={resortPeriod === p}
-                    icon={p === "day" ? "sunny-outline" : "moon-outline"}
-                    label={p === "day" ? "Day" : "Night"}
-                    scheme={p === "day" ? "day" : "night"}
-                      chipStyle={styles.equalHalfChip}
-                    onPress={() => setResortPeriod(p)}
-                  />
-                ))}
+                {typeof s.estimatedEntrancePesos === "number" && (
+                  <Text style={styles.resultLine}>
+                    Entrance: <Text style={styles.resultLineStrong}>{peso(s.estimatedEntrancePesos)}</Text>
+                  </Text>
+                )}
+                {typeof s.estimatedTotalPesos === "number" && (
+                  <Text style={styles.resultTotal}>
+                    Total: <Text style={styles.resultTotalStrong}>{peso(s.estimatedTotalPesos)}</Text>
+                  </Text>
+                )}
               </View>
-            </View>
-          </View>
-        ) : null}
 
-        {isNature ? (
-          <View style={styles.natureNoteBox}>
-            <View style={styles.natureNoteHeader}>
-              <Ionicons name="information-circle-outline" size={18} color={colors.primaryTeal} />
-              <Text style={styles.natureNoteTitle}>Notes</Text>
+            <Ionicons name="chevron-forward" size={18} color="rgba(4,120,126,0.55)" />
+            </Pressable>
+          );
+        })}
+
+        {stops.length === 0 &&
+          (fallbackCategory.length ? (
+            <View style={{ marginTop: 4 }}>
+              {fallbackCategory.slice(0, 10).map((c) => (
+                <Pressable
+                  key={c.id}
+                  style={({ pressed }) => [styles.resultCard, pressed && { opacity: 0.95 }]}
+                  onPress={() => navigation?.navigate?.("Detail", { id: c.id })}
+                >
+                  {c.photoUrl ? (
+                    <Image source={{ uri: c.photoUrl }} style={styles.resultThumb} />
+                  ) : (
+                    <View style={[styles.resultThumb, styles.resultThumbPh]}>
+                      <Ionicons name="image-outline" size={20} color={colors.primaryTealDeep} />
+                    </View>
+                  )}
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.resultName} numberOfLines={2}>{c.name}</Text>
+                    <Text style={styles.resultCat}>
+                      {c.categoryName ?? "Destination"}
+                      {c.municipalityName ? ` · ${c.municipalityName}` : ""}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="rgba(4,120,126,0.55)" />
+                </Pressable>
+              ))}
             </View>
-            <Text style={styles.natureNoteText}>
-              {natureSubcategory === "waterfalls-swimming"
-                ? "Most waterfalls, rivers, and swimming spots are free. Expect an environmental fee (usually around ₱10–₱20)."
-                : "Most nature destinations have no entrance fee. Expect an environmental fee (usually around ₱10–₱20)."}
+          ) : (
+            <Text style={styles.empty}>
+              No destinations found. Try a different municipality or category.
             </Text>
-          </View>
-        ) : (
-          <>
-            <Text style={styles.genLabel}>{categorySlug === "resorts-leisure" ? "Entrance budget" : "Budget per person"}</Text>
-            <View style={styles.genChipRowWrap}>
-              {[50, 100, 150, 200].map((b) => (
-                <IconChip
-                  key={b}
-                  active={budgetValue === b && !budgetInput.trim()}
-                  icon="cash-outline"
-                  label={`₱${b}`}
-                  scheme="budget"
-                  chipStyle={styles.equalBudgetChip}
-                  onPress={() => {
-                    setBudgetInput("");
-                    setBudgetValue(b);
-                  }}
-                />
-              ))}
-            </View>
-            <TextInput
-              value={budgetInput}
-              onChangeText={setBudgetInput}
-              placeholder={
-                categorySlug === "resorts-leisure"
-                  ? "Input custom entrance budget (optional) e.g. ₱250"
-                  : "Input custom budget per person (optional) e.g. ₱250"
-              }
-              keyboardType="numeric"
-              style={styles.input}
-            />
-          </>
-        )}
-
-        {categorySlug === "food-dining" ? (
-          <>
-            <Text style={styles.genLabel}>Best time to visit</Text>
-            <View style={styles.genChipRowWrap}>
-              {(["Breakfast", "Lunch", "Dinner"] as const).map((t) => (
-                <IconChip
-                  key={t}
-                  active={foodVisitTime === t}
-                  icon={t === "Breakfast" ? "sunny-outline" : t === "Lunch" ? "time-outline" : "moon-outline"}
-                  label={t}
-                  scheme={t === "Breakfast" ? "day" : t === "Lunch" ? "neutral" : "night"}
-                  chipStyle={styles.equalThirdChip}
-                  onPress={() => setFoodVisitTime(t)}
-                />
-              ))}
-            </View>
-          </>
-        ) : null}
-
-        <Text style={styles.genLabel}>Priorities (1st → 3rd)</Text>
-        <View style={styles.prioRow}>
-          {([
-            { key: "distance", label: "Distance", icon: "navigate-outline" as const },
-            { key: "popularity", label: "Popularity", icon: "star-outline" as const },
-            { key: "budget", label: "Budget", icon: "cash-outline" as const },
-          ] as const).map((o) => (
-            <View key={o.key} style={styles.prioCol}>
-              <Pressable onPress={() => setPriority(1, o.key)} style={[styles.prioBtn, prio1 === o.key && styles.prioBtnOn]}>
-                <View style={styles.prioTop}>
-                  <Ionicons name={o.icon} size={16} color={prio1 === o.key ? colors.primaryTealDeep : colors.muted2} />
-                  <Text style={[styles.prioTxt, prio1 === o.key && styles.prioTxtOn]}>1st</Text>
-                </View>
-                <Text style={[styles.prioName, prio1 === o.key && styles.prioNameOn]}>{o.label}</Text>
-              </Pressable>
-              <Pressable onPress={() => setPriority(2, o.key)} style={[styles.prioBtn, prio2 === o.key && styles.prioBtnOn]}>
-                <View style={styles.prioTop}>
-                  <Ionicons name={o.icon} size={16} color={prio2 === o.key ? colors.primaryTealDeep : colors.muted2} />
-                  <Text style={[styles.prioTxt, prio2 === o.key && styles.prioTxtOn]}>2nd</Text>
-                </View>
-                <Text style={[styles.prioName, prio2 === o.key && styles.prioNameOn]}>{o.label}</Text>
-              </Pressable>
-              <Pressable onPress={() => setPriority(3, o.key)} style={[styles.prioBtn, prio3 === o.key && styles.prioBtnOn]}>
-                <View style={styles.prioTop}>
-                  <Ionicons name={o.icon} size={16} color={prio3 === o.key ? colors.primaryTealDeep : colors.muted2} />
-                  <Text style={[styles.prioTxt, prio3 === o.key && styles.prioTxtOn]}>3rd</Text>
-                </View>
-                <Text style={[styles.prioName, prio3 === o.key && styles.prioNameOn]}>{o.label}</Text>
-              </Pressable>
-            </View>
           ))}
-        </View>
-
-        <Pressable style={({ pressed }) => [styles.genBtnHit, pressed && { transform: [{ translateY: 1 }] }]} onPress={generate}>
-          <View style={styles.genBtn}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Ionicons name="sparkles-outline" size={18} color="#fff" />
-              <Text style={styles.genBtnTxt}>Generate</Text>
-            </View>
-          </View>
-        </Pressable>
       </View>
-    );
-  }, [
-    view,
-    municipalities,
-    municipalityId,
-    categorySlug,
-    resortPeriod,
-    budgetValue,
-    budgetInput,
-    foodVisitTime,
-    prio1,
-    prio2,
-    prio3,
-    stops,
-    generate,
-    setPriority,
-    isNature,
-  ]);
+    </View>
+  );
+
+  // ─── Form View ──────────────────────────────────────────────────────────────
+
+  const formContent = (
+    <View>
+      {/* Top card */}
+      <LinearGradient
+        colors={["#F5F3FF", "#EFF6FF"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.topCard}
+      >
+        <View style={styles.topCardLeft}>
+          <LinearGradient
+            colors={["rgba(4,120,126,0.18)", "rgba(14,201,182,0.10)"]}
+            style={styles.topCardIconWrap}
+          >
+            <Ionicons name="location" size={26} color={colors.primaryTealDeep} />
+          </LinearGradient>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.topCardTitle}>Generate Itinerary</Text>
+            <Text style={styles.topCardSub}>Using current location (Modified A*).</Text>
+          </View>
+        </View>
+        <Pressable style={({ pressed }) => [styles.locationPill, pressed && { opacity: 0.88 }]}>
+          <LinearGradient
+            colors={["rgba(4,120,126,0.10)", "rgba(14,201,182,0.08)"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.locationPillInner}
+          >
+            <Ionicons name="navigate" size={14} color={colors.primaryTealDeep} />
+            <Text style={styles.locationPillTxt}>Using current location</Text>
+            <Ionicons name="chevron-forward" size={13} color={colors.primaryTealDeep} />
+          </LinearGradient>
+        </Pressable>
+      </LinearGradient>
+
+      {/* Municipality */}
+      <SectionRow
+        left="CHOOSE MUNICIPALITY"
+        right={{ label: "View all", onPress: () => {} }}
+      />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.muniRow}
+      >
+        {municipalities.slice(0, 12).map((m) => (
+          <MuniChip
+            key={m.id}
+            name={m.name}
+            active={municipalityId === m.id}
+            onPress={() => setMunicipalityId(m.id)}
+          />
+        ))}
+      </ScrollView>
+
+      {/* Category */}
+      <SectionRow left="CHOOSE CATEGORY" />
+      <View style={styles.catRow}>
+        <CategoryCard
+          active={categorySlug === "resorts-leisure"}
+          title={"Resort &\nLeisure"}
+          emoji="🏖️"
+          gradient={["#E0F7FA", "#B2EBF2", "#E0F7FA"]}
+          onPress={() => {
+            setCategorySlug("resorts-leisure");
+            setNatureSubcategory("all");
+            setBudgetInput("");
+            setBudgetValue(150);
+          }}
+        />
+        <CategoryCard
+          active={categorySlug === "nature-adventure"}
+          title={"Nature &\nAdventure"}
+          emoji="🌿"
+          gradient={["#E8F5E9", "#C8E6C9", "#E8F5E9"]}
+          onPress={() => {
+            setCategorySlug("nature-adventure");
+            setBudgetInput("");
+            setBudgetValue(150);
+          }}
+        />
+        <CategoryCard
+          active={categorySlug === "food-dining"}
+          title={"Food &\nDining"}
+          emoji="🍜"
+          gradient={["#FFF3E0", "#FFE0B2", "#FFF3E0"]}
+          onPress={() => {
+            setCategorySlug("food-dining");
+            setNatureSubcategory("all");
+            setBudgetInput("");
+            setBudgetValue(150);
+          }}
+        />
+      </View>
+
+      {/* Day / Night (resorts only) */}
+      {categorySlug === "resorts-leisure" && (
+        <>
+          <SectionRow left="DAY / NIGHT" />
+          <View style={styles.dayNightRow}>
+            <Pressable
+              onPress={() => setResortPeriod("day")}
+              style={({ pressed }) => [
+                styles.dayNightBtn,
+                resortPeriod === "day" && styles.dayNightBtnActive,
+                pressed && { opacity: 0.9 },
+              ]}
+            >
+              {resortPeriod === "day" ? (
+                <LinearGradient
+                  colors={["#FEF3C7", "#FDE68A"]}
+                  style={StyleSheet.absoluteFill}
+                />
+              ) : null}
+              <Text style={styles.dayNightEmoji}>☀️</Text>
+              <Text style={[styles.dayNightTxt, resortPeriod === "day" && { color: "#92400E" }]}>
+                Day
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setResortPeriod("night")}
+              style={({ pressed }) => [
+                styles.dayNightBtn,
+                resortPeriod === "night" && styles.dayNightBtnActiveNight,
+                pressed && { opacity: 0.9 },
+              ]}
+            >
+              {resortPeriod === "night" ? (
+                <LinearGradient
+                  colors={["#1E3A5F", "#312E81"]}
+                  style={StyleSheet.absoluteFill}
+                />
+              ) : null}
+              <Text style={styles.dayNightEmoji}>🌙</Text>
+              <Text style={[styles.dayNightTxt, resortPeriod === "night" && { color: "#C7D2FE" }]}>
+                Night
+              </Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+
+      {/* Budget */}
+      <SectionRow
+        left={
+          categorySlug === "resorts-leisure" ? "ENTRANCE BUDGET" : "BUDGET PER PERSON"
+        }
+      />
+      <View style={styles.budgetRow}>
+        {[
+          { val: 50, emoji: "💙", grad: ["#BFDBFE", "#93C5FD"] as [string, string] },
+          { val: 100, emoji: "💚", grad: ["#BBF7D0", "#86EFAC"] as [string, string] },
+          { val: 150, emoji: "🧡", grad: ["#FED7AA", "#FDBA74"] as [string, string] },
+          { val: 200, emoji: "💚", grad: ["#A7F3D0", "#5EEAD4"] as [string, string] },
+        ].map(({ val, emoji, grad }) => (
+          <BudgetChip
+            key={val}
+            active={budgetValue === val && !budgetInput.trim()}
+            label={`₱${val}`}
+            emoji={emoji}
+            gradient={grad}
+            onPress={() => {
+              setBudgetInput("");
+              setBudgetValue(val);
+            }}
+          />
+        ))}
+      </View>
+
+      <View style={styles.budgetInputRow}>
+        <View style={styles.budgetInputIcon}>
+          <Ionicons name="calculator-outline" size={17} color="#9CA3AF" />
+        </View>
+        <TextInput
+          value={budgetInput}
+          onChangeText={setBudgetInput}
+          placeholder={
+            categorySlug === "resorts-leisure"
+              ? "Custom entrance budget (optional)"
+              : "Custom budget per person (optional)"
+          }
+          placeholderTextColor="rgba(100,116,139,0.5)"
+          keyboardType="numeric"
+          style={styles.budgetInput}
+        />
+        <Text style={styles.budgetHint}>e.g. 250</Text>
+      </View>
+
+      {/* Priorities */}
+      <SectionRow
+        left="PRIORITIES (1ST → 3RD)"
+        right={{ label: "What's this?", onPress: () => {} }}
+      />
+      <View style={styles.prioRow}>
+        {([
+          { slot: 1 as const, key: prio1 },
+          { slot: 2 as const, key: prio2 },
+          { slot: 3 as const, key: prio3 },
+        ] as const).map(({ slot, key }) => {
+          const order: PriorityKey[] = ["distance", "popularity", "budget"];
+          return (
+            <PriorityChip
+              key={slot}
+              rank={slot}
+              priorityKey={key}
+              onPress={() => {
+                const next = order[(order.indexOf(key) + 1) % order.length];
+                setPriority(slot, next);
+              }}
+            />
+          );
+        })}
+      </View>
+
+      {/* CTA */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.ctaHit,
+          pressed && { transform: [{ scale: 0.98 }] },
+        ]}
+        onPress={generate}
+      >
+        <LinearGradient
+          colors={["#22C55E", "#14B8A6", "#16A34A"]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={styles.cta}
+        >
+          <Text style={styles.ctaEmoji}>✨</Text>
+          <Text style={styles.ctaTxt}>Generate Itinerary</Text>
+          <Ionicons name="send" size={17} color="#fff" />
+        </LinearGradient>
+      </Pressable>
+    </View>
+  );
+
+  const content =
+    view === "loading"
+      ? loadingContent
+      : view === "results"
+        ? resultsContent
+        : formContent;
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: colors.pageBg }}
-      contentContainerStyle={{ paddingBottom: 28, paddingHorizontal: 20, paddingTop: Math.max(insets.top, 8) }}
+      style={styles.root}
+      contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 26 }}
+      showsVerticalScrollIndicator={false}
     >
-      <View style={styles.kickerRow}>
-        {view === "form" ? (
-          <TabInlineBackButton />
-        ) : (
+      {/* Hero */}
+      <ImageBackground source={HERO_BACKGROUND} style={styles.heroBg} resizeMode="cover">
+        <LinearGradient
+          colors={["rgba(0,0,0,0.42)", "rgba(0,0,0,0.12)", "rgba(0,0,0,0)"]}
+          locations={[0, 0.55, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={[styles.heroTop, { paddingTop: Math.max(insets.top, 10) }]}>
           <Pressable
-            onPress={() => setView("form")}
+            onPress={() => navigation?.goBack?.()}
             hitSlop={10}
-            style={({ pressed }) => [styles.inlineBack, pressed && { transform: [{ scale: 0.98 }] }]}
-            accessibilityRole="button"
-            accessibilityLabel="Back to planning"
+            style={({ pressed }) => [styles.heroBack, pressed && { opacity: 0.85 }]}
           >
-            <Ionicons name="chevron-back" size={20} color={colors.primaryTealDeep} />
-            <Text style={styles.inlineBackTxt}>Back</Text>
+            <Ionicons name="chevron-back" size={22} color="#fff" />
           </Pressable>
-        )}
-        <Text style={styles.kicker}>ITINERARY</Text>
-      </View>
-      <Text style={styles.title}>Itinerary</Text>
-      {content}
+          <View style={styles.heroBalloon}>
+            <Text style={{ fontSize: 28 }}>🎈</Text>
+          </View>
+        </View>
+        <View style={styles.heroCopy}>
+          <View style={styles.heroKickerWrap}>
+            <Text style={styles.heroKicker}>ITINERARY</Text>
+          </View>
+          <Text style={styles.heroTitle}>Itinerary</Text>
+          <Text style={styles.heroSub}>Plan your perfect trip ✨</Text>
+        </View>
+      </ImageBackground>
+
+      {/* Sheet */}
+      <View style={styles.sheet}>{content}</View>
     </ScrollView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  kickerRow: {
+  root: { flex: 1, backgroundColor: "#F0F4FF" },
+
+  // Hero
+  heroBg: { height: 220, width: "100%" },
+  heroTop: {
+    paddingHorizontal: 18,
     flexDirection: "row",
     alignItems: "center",
-    gap: 2,
-    marginBottom: 2,
+    justifyContent: "space-between",
   },
-  inlineBack: { flexDirection: "row", alignItems: "center", gap: 2, paddingVertical: 6, paddingRight: 8 },
-  inlineBackTxt: { fontSize: 12.5, fontWeight: "700", color: colors.primaryTealDeep },
-  kicker: {
+  heroBack: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.28)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.30)",
+  },
+  heroBalloon: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroCopy: { paddingHorizontal: 18, paddingTop: 10 },
+  heroKickerWrap: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.30)",
+  },
+  heroKicker: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "rgba(255,255,255,0.95)",
+    letterSpacing: 1.6,
+  },
+  heroTitle: {
+    fontSize: 36,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: -0.8,
+    textShadowColor: "rgba(0,0,0,0.22)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+  },
+  heroSub: {
+    marginTop: 3,
+    fontSize: 14.5,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.90)",
+  },
+
+  // Sheet
+  sheet: {
+    marginTop: -58,
+    marginHorizontal: 12,
+    backgroundColor: "#FDFCFF",
+    borderRadius: 26,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(196,181,253,0.30)",
+    ...shadowCompat({ opacity: 0.12, radius: 20, offsetY: 10, elevation: 10 }),
+  },
+
+  // Section row
+  sectionRow: {
+    marginTop: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitle: {
     fontSize: 11,
     fontWeight: "800",
-    letterSpacing: 1.2,
-    color: colors.primaryTeal,
+    color: "#94A3B8",
+    letterSpacing: 1.1,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: colors.navy,
-    marginTop: 4,
+  sectionRight: { flexDirection: "row", alignItems: "center", gap: 3 },
+  sectionRightTxt: { fontSize: 12.5, fontWeight: "700", color: colors.primaryTealDeep },
+
+  // Top card
+  topCard: {
+    borderRadius: 20,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(196,181,253,0.35)",
+    flexDirection: "column",
+    gap: 10,
+    ...shadowCompat({ opacity: 0.06, radius: 12, offsetY: 6, elevation: 4 }),
   },
-  sectionHead: {
-    marginTop: 10,
+  topCardLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  topCardIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  topCardTitle: { fontSize: 15, fontWeight: "800", color: "#1E1B4B" },
+  topCardSub: { marginTop: 2, fontSize: 12.5, fontWeight: "600", color: colors.primaryTealDeep },
+  locationPill: { borderRadius: 14, overflow: "hidden" },
+  locationPillInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(4,120,126,0.26)",
+  },
+  locationPillTxt: { flex: 1, fontSize: 13, fontWeight: "700", color: colors.primaryTealDeep },
+
+  // Municipality
+  muniRow: { gap: 10, paddingTop: 10, paddingBottom: 2, paddingRight: 10 },
+  muniChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: "rgba(11,184,196,0.10)",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 15,
     borderWidth: 1,
-    borderColor: "rgba(11,184,196,0.22)",
+    borderColor: "rgba(148,163,184,0.22)",
+    backgroundColor: "#fff",
   },
-  sectionHeadTxt: { fontSize: 13, fontWeight: "900", color: colors.primaryTealDeep },
-  genCard: {
-    marginTop: 14,
-    backgroundColor: colors.white,
+  muniChipActive: {
+    borderColor: "rgba(4,120,126,0.35)",
+    backgroundColor: "rgba(4,120,126,0.06)",
+    transform: [{ translateY: -1 }],
+    ...shadowCompat({ opacity: 0.08, radius: 10, offsetY: 4, elevation: 4 }),
+  },
+  muniIconBg: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  muniTxt: { fontSize: 13, fontWeight: "700", color: "#64748B", maxWidth: 130 },
+  muniTxtActive: { color: colors.navy },
+  muniCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.primaryTealDeep,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // Category
+  catRow: { flexDirection: "row", gap: 10, marginTop: 10 },
+  catCardHit: { flex: 1 },
+  catCard: {
+    flex: 1,
+    borderRadius: 20,
+    padding: 12,
+    minHeight: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "rgba(148,163,184,0.18)",
+    overflow: "hidden",
+  },
+  catCardActive: {
+    borderColor: "rgba(4,120,126,0.40)",
+    transform: [{ translateY: -2 }],
+    ...shadowCompat({ opacity: 0.12, radius: 14, offsetY: 6, elevation: 6 }),
+  },
+  catActiveRing: {
+    position: "absolute",
+    inset: 0,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "rgba(4,120,126,0.22)",
+  },
+  catEmojiWrap: {
+    width: 52,
+    height: 52,
     borderRadius: 18,
-    padding: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.80)",
     borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 18,
+    borderColor: "rgba(148,163,184,0.20)",
+    marginBottom: 8,
   },
-  genTop: { marginBottom: 10 },
-  genTitle: { fontSize: 16, fontWeight: "800", color: colors.navy },
-  genSub: { marginTop: 2, fontSize: 12.5, fontWeight: "600", color: colors.muted2, lineHeight: 17 },
-  genLabel: {
-    marginTop: 12,
-    fontSize: 12,
+  catEmoji: { fontSize: 26 },
+  catTitle: {
+    fontSize: 12.5,
     fontWeight: "700",
-    color: colors.muted2,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
+    color: "#1E1B4B",
+    textAlign: "center",
+    lineHeight: 17,
   },
-  genChipRow: { gap: 10, paddingVertical: 12, paddingRight: 6 },
-  genChipRowWrap: { flexDirection: "row", flexWrap: "wrap", gap: 10, paddingTop: 12 },
-  genChipHit: { borderRadius: 12 },
-  genChip: {
+  catCheckDot: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.primaryTealDeep,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // Day / Night
+  dayNightRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1.5,
+    borderColor: "rgba(148,163,184,0.22)",
+    height: 52,
+  },
+  dayNightBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.chipIdle,
-    minHeight: 46,
+    justifyContent: "center",
+    gap: 8,
+    overflow: "hidden",
+    borderRadius: 0,
   },
-  genCardBtn: {
+  dayNightBtnActive: { backgroundColor: "#FEF3C7" },
+  dayNightBtnActiveNight: { backgroundColor: "#1E3A5F" },
+  dayNightEmoji: { fontSize: 18 },
+  dayNightTxt: { fontSize: 14, fontWeight: "700", color: "#64748B" },
+
+  // Budget
+  budgetRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  budgetChipHit: { flex: 1 },
+  budgetChip: {
+    flex: 1,
+    flexDirection: "column",
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    minHeight: 108,
-  },
-  iconBadge: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    marginBottom: 10,
-  },
-  genChipOn: {
-    borderColor: "rgba(11,184,196,0.35)",
-    backgroundColor: "rgba(11,184,196,0.14)",
-  },
-  genChipTxt: { fontSize: 13.5, fontWeight: "700", color: colors.muted2 },
-  genChipTxtOn: { color: colors.primaryTealDeep },
-  genCardBtnTxt: { fontSize: 13, fontWeight: "700", color: colors.muted2, textAlign: "center", lineHeight: 17 },
-  genCardBtnTxtOn: { color: colors.navy },
-  row2: { flexDirection: "row", gap: 12, marginTop: 6 },
-  categoryRow: { flexDirection: "row", gap: 10, marginTop: 12, alignItems: "stretch" },
-  equalCategoryCard: {
-    width: "100%",
-  },
-  equalHalfChip: {
-    width: 126,
-    justifyContent: "center",
-  },
-  equalBudgetChip: {
-    width: 92,
-    justifyContent: "center",
-  },
-  natureNoteBox: {
-    marginTop: 16,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: "rgba(11,184,196,0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(11,184,196,0.22)",
-  },
-  natureNoteHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 },
-  natureNoteTitle: { fontSize: 13, fontWeight: "900", color: colors.primaryTealDeep },
-  natureNoteText: { fontSize: 12.5, fontWeight: "600", color: colors.muted2, lineHeight: 18 },
-  equalThirdChip: {
-    width: 108,
-    justifyContent: "center",
-  },
-  numRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 10 },
-  input: {
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    fontWeight: "700",
-    color: colors.navy,
-    backgroundColor: "rgba(15, 23, 42, 0.03)",
-  },
-  prioRow: { flexDirection: "row", gap: 8, marginTop: 10 },
-  prioCol: { flex: 1, gap: 8 },
-  prioBtn: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
     paddingVertical: 10,
-    paddingHorizontal: 10,
-    backgroundColor: colors.chipIdle,
-  },
-  prioBtnOn: {
-    borderColor: "rgba(11,184,196,0.35)",
-    backgroundColor: "rgba(11,184,196,0.14)",
-  },
-  prioTxt: { fontSize: 11, fontWeight: "700", color: colors.muted2, opacity: 0.85 },
-  prioTxtOn: { color: colors.primaryTealDeep, opacity: 1 },
-  prioName: { marginTop: 2, fontSize: 12.5, fontWeight: "700", color: colors.navy },
-  prioNameOn: { color: colors.primaryTealDeep },
-  prioTop: { flexDirection: "row", alignItems: "center", gap: 6 },
-  genBtnHit: { borderRadius: 16, overflow: "hidden" },
-  genBtn: {
-    marginTop: 14,
-    backgroundColor: colors.primaryTeal,
-    paddingVertical: 16,
     borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "rgba(148,163,184,0.20)",
+    gap: 3,
+  },
+  budgetChipActive: {
+    borderColor: "rgba(124,58,237,0.40)",
+    transform: [{ translateY: -2 }],
+    ...shadowCompat({ opacity: 0.10, radius: 10, offsetY: 4, elevation: 4 }),
+  },
+  budgetChipEmoji: { fontSize: 18 },
+  budgetChipTxt: {
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: "#94A3B8",
+  },
+  budgetChipTxtActive: { color: "#1E1B4B", fontWeight: "800" },
+
+  budgetInputRow: {
+    marginTop: 10,
+    flexDirection: "row",
     alignItems: "center",
-  },
-  genBtnTxt: { color: "#fff", fontWeight: "800", fontSize: 15 },
-  loadingWrap: { marginTop: 14 },
-  loadingHead: { marginBottom: 14 },
-  loadingTitle: { fontSize: 18, fontWeight: "800", color: colors.navy },
-  loadingSub: { marginTop: 4, fontSize: 13, fontWeight: "600", color: colors.muted2, lineHeight: 18 },
-  loadingCard: {
-    height: 74,
+    gap: 10,
     borderRadius: 16,
-    backgroundColor: "rgba(15,23,42,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.08)",
-    marginBottom: 12,
+    borderColor: "rgba(148,163,184,0.22)",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    ...shadowCompat({ opacity: 0.05, radius: 10, offsetY: 6, elevation: 2 }),
   },
-  resultsHead: { marginTop: 12, flexDirection: "row", alignItems: "center", gap: 10 },
-  resultsTitle: { fontSize: 20, fontWeight: "800", color: colors.navy },
-  resultsSub: { marginTop: 2, fontSize: 13, fontWeight: "500", color: colors.muted2 },
-  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
-  metaPill: {
+  budgetInputIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F1F5F9",
+  },
+  budgetInput: {
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: "#1E1B4B",
+    minWidth: 0,
+  },
+  budgetHint: { fontSize: 12, fontWeight: "600", color: "rgba(71,85,105,0.55)" },
+
+  // Priorities
+  prioRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  prioChipHit: { flex: 1 },
+  prioChip: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(196,181,253,0.40)",
+    backgroundColor: "#F8F6FF",
+    overflow: "hidden",
+    paddingBottom: 10,
+  },
+  prioBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
+  },
+  prioDot: { width: 6, height: 6, borderRadius: 3 },
+  prioBadgeTxt: { fontSize: 11, fontWeight: "800" },
+  prioInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingHorizontal: 6,
+  },
+  prioLabel: { fontSize: 12.5, fontWeight: "800", flex: 1 },
+
+  // CTA
+  ctaHit: { marginTop: 16, borderRadius: 20, overflow: "hidden" },
+  cta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+  },
+  ctaEmoji: { fontSize: 18 },
+  ctaTxt: { fontSize: 16, fontWeight: "800", color: "#fff", letterSpacing: -0.2 },
+
+  // Loading
+  loadingWrap: { marginTop: 10 },
+  loadingHead: { marginBottom: 14 },
+  loadingTitle: { fontSize: 18, fontWeight: "800", color: "#1E1B4B" },
+  loadingSub: { marginTop: 4, fontSize: 13, fontWeight: "600", color: "#94A3B8", lineHeight: 18 },
+  loadingCard: {
+    height: 76,
+    borderRadius: 18,
+    backgroundColor: "rgba(4,120,126,0.10)",
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(4,120,126,0.18)",
+  },
+
+  // Results
+  resultsHead: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 4,
+  },
+  resultsTitle: { fontSize: 19, fontWeight: "800", color: "#1E1B4B" },
+  resultsSub: { marginTop: 2, fontSize: 13, fontWeight: "600", color: "#94A3B8" },
+  regenBtn: { borderRadius: 14, overflow: "hidden" },
+  regenBtnInner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: colors.chipIdle,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(148,163,184,0.22)",
+    borderColor: "rgba(4,120,126,0.22)",
   },
-  metaPillTxt: { fontSize: 12.5, fontWeight: "800", color: colors.navy },
-  metaPillTeal: { backgroundColor: "rgba(11,184,196,0.10)", borderColor: "rgba(11,184,196,0.22)" },
-  metaPillTxtTeal: { color: colors.primaryTealDeep },
-  metaPillStar: { backgroundColor: "rgba(245,158,11,0.10)", borderColor: "rgba(245,158,11,0.18)" },
-  metaPillBudget: { backgroundColor: "rgba(236,72,153,0.10)", borderColor: "rgba(236,72,153,0.18)" },
+  regenBtnTxt: { fontSize: 12.5, fontWeight: "700", color: colors.primaryTealDeep },
+
   noteBox: {
     flexDirection: "row",
     gap: 10,
     alignItems: "flex-start",
     padding: 12,
     borderRadius: 14,
-    backgroundColor: "rgba(11,184,196,0.10)",
+    backgroundColor: "rgba(4,120,126,0.08)",
     borderWidth: 1,
-    borderColor: "rgba(11,184,196,0.22)",
+    borderColor: "rgba(4,120,126,0.18)",
     marginBottom: 10,
+    marginTop: 6,
   },
-  noteText: { flex: 1, fontSize: 12.5, fontWeight: "600", color: colors.muted2, lineHeight: 18 },
-  smallBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(11,184,196,0.28)",
-    backgroundColor: "rgba(11,184,196,0.10)",
-  },
-  smallBtnTxt: { fontSize: 13, fontWeight: "600", color: colors.primaryTealDeep },
+  noteText: { flex: 1, fontSize: 12.5, fontWeight: "600", color: colors.primaryTealDeep, lineHeight: 17 },
+
   resultCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     padding: 12,
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(148,163,184,0.22)",
-    backgroundColor: colors.white,
+    borderColor: "rgba(196,181,253,0.30)",
+    backgroundColor: "#fff",
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 5,
+    ...shadowCompat({ opacity: 0.07, radius: 14, offsetY: 6, elevation: 4 }),
     position: "relative",
   },
-  topBadge: {
+  rankBadge: {
     position: "absolute",
-    right: 10,
-    top: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    top: 8,
+    right: 42,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: "rgba(11,184,196,0.10)",
     borderWidth: 1,
-    borderColor: "rgba(11,184,196,0.26)",
+    backgroundColor: "#FFFBEB",
   },
-  topBadgeTxt: { fontSize: 11.5, fontWeight: "700", color: colors.primaryTealDeep },
-  resultIdx: {
-    width: 28,
-    height: 28,
-    borderRadius: 10,
-    backgroundColor: "rgba(11,184,196,0.14)",
-    borderWidth: 1,
-    borderColor: "rgba(11,184,196,0.26)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  resultIdxTxt: { fontSize: 13, fontWeight: "800", color: colors.primaryTealDeep },
-  resultThumb: { width: 54, height: 54, borderRadius: 14, backgroundColor: colors.chipIdle },
-  resultThumbPh: { alignItems: "center", justifyContent: "center" },
-  resultName: { fontSize: 14.5, fontWeight: "700", color: colors.navy },
-  resultCat: { marginTop: 2, fontSize: 12, fontWeight: "500", color: colors.muted2 },
-  resultCost: { marginTop: 6, fontSize: 12.5, fontWeight: "500", color: colors.text, lineHeight: 17 },
-  resultCostStrong: { fontWeight: "700", color: colors.navy },
-  resultCostMeta: { color: colors.muted2, fontWeight: "500" },
-  resultLine: { marginTop: 4, fontSize: 12.5, fontWeight: "500", color: colors.text, lineHeight: 17 },
-  resultLineStrong: { fontWeight: "700", color: colors.navy },
-  resultLineMuted: { color: colors.muted2, fontWeight: "500" },
-  resultTotal: { marginTop: 6, fontSize: 13, fontWeight: "600", color: colors.navy },
-  resultTotalStrong: { fontWeight: "700", color: colors.primaryTealDeep },
-  tabs: {
-    flexDirection: "row",
-    gap: 24,
-    marginTop: 16,
-    marginBottom: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  tabHit: {
-    paddingBottom: 10,
-  },
-  tabLabel: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.muted2,
-  },
-  tabLabelOn: {
-    color: colors.primaryTeal,
-  },
-  tabLine: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.primaryTeal,
-  },
-  tripCard: {
-    backgroundColor: colors.white,
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 20,
-  },
-  tripTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  tripTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: colors.navy,
-  },
-  tripDates: {
-    marginTop: 4,
-    fontSize: 14,
-    color: colors.muted,
-  },
-  badge: {
-    alignSelf: "flex-start",
-    marginTop: 12,
-    backgroundColor: "rgba(4, 120, 126, 0.12)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  badgeText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: colors.primaryTealDeep,
-  },
-  timelineWrap: {
-    gap: 0,
-  },
-  timelineRow: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    marginBottom: 4,
-  },
-  timeCol: {
-    width: 36,
-    alignItems: "center",
-    marginRight: 10,
-  },
-  vline: {
-    position: "absolute",
-    top: 36,
-    bottom: -8,
-    width: 2,
-    backgroundColor: colors.border,
-    left: "50%",
-    marginLeft: -1,
-  },
-  numBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.primaryTeal,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1,
-  },
-  numText: {
-    color: "#fff",
-    fontWeight: "800",
-    fontSize: 14,
-  },
-  itemCard: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: colors.white,
-    borderRadius: 16,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  thumb: {
+  rankEmoji: { fontSize: 13 },
+  resultThumb: {
     width: 56,
     height: 56,
-    borderRadius: 12,
-    backgroundColor: colors.chipIdle,
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "rgba(4,120,126,0.10)",
   },
-  thumbPh: {
+  resultThumbPh: {
     alignItems: "center",
     justifyContent: "center",
   },
-  itemTop: {
+  resultName: { fontSize: 14, fontWeight: "700", color: "#1E1B4B" },
+  resultCat: { marginTop: 2, fontSize: 11.5, fontWeight: "600", color: "#94A3B8" },
+  metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 7 },
+  metaPill: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 8,
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
   },
-  placeName: {
-    fontWeight: "800",
-    color: colors.navy,
-    fontSize: 15,
-    flex: 1,
-  },
-  placeCat: {
-    fontSize: 12,
-    color: colors.muted,
-    marginTop: 2,
-  },
-  placeTime: {
-    fontSize: 12,
-    color: colors.muted2,
+  metaPillTxt: { fontSize: 11.5, fontWeight: "700" },
+  resultLine: {
     marginTop: 4,
-  },
-  costLine: {
-    marginTop: 6,
-    fontSize: 12.5,
-    color: colors.text,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748B",
     lineHeight: 17,
   },
-  costStrong: { fontWeight: "900", color: colors.navy },
-  costMeta: { color: colors.muted2, fontWeight: "700" },
-  statsRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 18,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.chipIdle,
-    borderRadius: 16,
-    padding: 14,
-  },
-  statLabel: {
-    color: colors.muted2,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  statValue: {
-    marginTop: 6,
-    fontSize: 18,
-    fontWeight: "800",
-    color: colors.navy,
-  },
-  optimize: {
-    marginTop: 18,
-    backgroundColor: colors.primaryTeal,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: "center",
-  },
-  optimizeText: {
-    color: "#fff",
-    fontWeight: "800",
-    fontSize: 16,
-  },
-  hintRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    justifyContent: "center",
-    marginTop: 10,
-  },
-  hint: {
-    fontSize: 12,
-    color: colors.muted,
-  },
-  clearBtn: {
-    marginTop: 14,
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-  clearTxt: {
-    color: colors.primaryTeal,
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  map: {
-    marginTop: 18,
-    height: 180,
-    borderRadius: 18,
-    backgroundColor: "#E9F6F4",
-    borderWidth: 1,
-    borderColor: "#CFEEE9",
-    position: "relative",
-    overflow: "hidden",
-  },
-  routeLine: {
-    position: "absolute",
-    left: "12%",
-    right: "12%",
-    top: "48%",
-    height: 3,
-    backgroundColor: colors.primaryTeal,
-    borderRadius: 999,
-  },
-  pin: {
-    position: "absolute",
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.primaryTeal,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  empty: {
-    color: colors.muted,
-    marginTop: 16,
-    fontSize: 14,
-    lineHeight: 20,
-  },
+  resultLineStrong: { fontWeight: "700", color: "#1E1B4B" },
+  resultTotal: { marginTop: 5, fontSize: 12.5, fontWeight: "700", color: "#1E1B4B" },
+  resultTotalStrong: { fontWeight: "800", color: colors.primaryTealDeep },
+  empty: { color: "#94A3B8", marginTop: 16, fontSize: 14, lineHeight: 20, textAlign: "center" },
 });

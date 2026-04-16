@@ -20,6 +20,7 @@ import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { firstPhotoPublicUrl } from "../lib/businessDisplay";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
+import { shadowCompat } from "../lib/rnWebStyleCompat";
 import { BOOKING_NOTIFICATION_EVENT, BOOKING_OPEN_DETAIL_EVENT } from "../lib/bookingNotificationEvents";
 
 type Props = CompositeScreenProps<
@@ -222,7 +223,7 @@ export function BookingsScreen({ navigation }: Props) {
         onRequestClose={() => setDetailOpen(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => setDetailOpen(false)} />
-        <View style={styles.modalWrap} pointerEvents="box-none">
+        <View style={[styles.modalWrap, { pointerEvents: "box-none" as any }]}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle} numberOfLines={1}>
@@ -471,11 +472,7 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    ...shadowCompat({ opacity: 0.06, radius: 10, offsetY: 4, elevation: 2 }),
   },
   thumb: {
     width: 88,
@@ -577,11 +574,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 6,
+    ...shadowCompat({ opacity: 0.12, radius: 18, offsetY: 10, elevation: 6 }),
   },
   modalHeader: {
     flexDirection: "row",

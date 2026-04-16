@@ -1,0 +1,12 @@
+diff --git a/node_modules/expo-av/android/CMakeLists.txt b/node_modules/expo-av/android/CMakeLists.txt
+index e55dbb2..2503dd4 100644
+--- a/node_modules/expo-av/android/CMakeLists.txt
++++ b/node_modules/expo-av/android/CMakeLists.txt
+@@ -43,6 +43,6 @@ target_link_libraries(
+         ${LOG_LIB}
+         fbjni::fbjni
+         ReactAndroid::jsi
+-        ReactAndroid::reactnativejni
++        ReactAndroid::reactnative
+         android
+ )

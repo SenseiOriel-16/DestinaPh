@@ -21,6 +21,7 @@ import { firstPhotoPublicUrl, formatBusinessAddress } from "../lib/businessDispl
 import { ratingParts } from "../lib/businessRatingDisplay";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
+import { shadowCompat } from "../lib/rnWebStyleCompat";
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<ExploreStackParamList, "ExploreMain">,
@@ -402,11 +403,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    ...shadowCompat({ opacity: 0.06, radius: 12, offsetY: 4, elevation: 2 }),
   },
   cardThumb: {
     width: 92,

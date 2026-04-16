@@ -2,6 +2,7 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import type { ReactNode } from "react";
 import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { shadowCompat } from "../lib/rnWebStyleCompat";
 
 type Props = {
   children: ReactNode;
@@ -61,15 +62,13 @@ export function GlassPanel({
     >
       <BlurView intensity={blur} tint={resolvedTint} style={[StyleSheet.absoluteFill, { borderRadius }]} />
       <View
-        pointerEvents="none"
         style={[
           StyleSheet.absoluteFill,
           variant === "subtle" ? styles.veilSubtle : variant === "smoke" ? styles.veilSmoke : styles.veil,
-          { borderRadius },
+          { borderRadius, pointerEvents: "none" as any },
         ]}
       />
       <LinearGradient
-        pointerEvents="none"
         colors={
           variant === "subtle"
             ? ["rgba(255,255,255,0.16)", "rgba(255,255,255,0.04)", "rgba(255,255,255,0.10)"]
@@ -80,7 +79,7 @@ export function GlassPanel({
         locations={[0, 0.55, 1]}
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
-        style={[StyleSheet.absoluteFill, styles.sheen, { borderRadius }]}
+        style={[StyleSheet.absoluteFill, styles.sheen, { borderRadius, pointerEvents: "none" as any }]}
       />
       <View style={[styles.content, { borderRadius }, contentStyle]}>{children}</View>
     </View>
@@ -93,23 +92,15 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: StyleSheet.hairlineWidth * 2,
     borderColor: "rgba(255,255,255,0.62)",
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    ...shadowCompat({ opacity: 0.12, radius: 14, offsetY: 6, elevation: 6 }),
   },
   outerSubtle: {
     borderColor: "rgba(255,255,255,0.46)",
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
+    ...shadowCompat({ opacity: 0.1, radius: 12, offsetY: 6, elevation: 6 }),
   },
   outerSmoke: {
     borderColor: "rgba(255,255,255,0.26)",
-    shadowOpacity: 0.22,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 10,
+    ...shadowCompat({ opacity: 0.22, radius: 22, offsetY: 10, elevation: 10 }),
   },
   veil: {
     backgroundColor: "rgba(255,255,255,0.10)",

@@ -19,6 +19,7 @@ import { HERO_BACKGROUND } from "../constants/heroBackground";
 import { isValidUsernameFormat, normalizeUsername, resolveLoginEmail } from "../lib/authUsername";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
+import { shadowCompat, textShadowCompat } from "../lib/rnWebStyleCompat";
 import { PasswordField } from "../components/PasswordField";
 import { BrandAppIcon } from "../ui/BrandAppIcon";
 import { GlassPanel } from "../ui/GlassPanel";
@@ -404,9 +405,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     textAlign: "center",
     letterSpacing: -0.5,
-    textShadowColor: "rgba(0,0,0,0.2)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    ...textShadowCompat({ color: "rgba(0,0,0,0.2)", offsetY: 1, radius: 4 }),
   },
   screenSub: {
     marginTop: 8,
@@ -477,11 +476,7 @@ const styles = StyleSheet.create({
     marginTop: 22,
     borderRadius: 16,
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    ...shadowCompat({ opacity: 0.18, radius: 10, offsetY: 4, elevation: 4 }),
   },
   signInSubmitOuter: {
     borderWidth: 1,

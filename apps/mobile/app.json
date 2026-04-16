@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "DestinaPH",
-    "slug": "destinaph",
+    "slug": "destinaph-llabresoscar08-dev",
     "version": "1.0.0",
     "platforms": [
       "ios",
@@ -55,15 +55,14 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.RECORD_AUDIO"
       ]
     },
     "extra": {
       "eas": {
-        "projectId": "45a4f3b4-77ee-4783-b96b-d1b3e8331598"
+        "projectId": "b645d92c-07e2-4483-a3ae-03ad2f5f21c9"
       }
-    }
+    },
+    "owner": "llabresoscar08"
   }
 }
