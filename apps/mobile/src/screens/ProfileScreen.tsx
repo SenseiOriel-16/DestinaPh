@@ -7,9 +7,9 @@ import * as ImagePicker from "expo-image-picker";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   DeviceEventEmitter,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -23,6 +23,7 @@ import type { TabParamList } from "../navigation/tabTypes";
 import { PasswordField } from "../components/PasswordField";
 import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { isValidUsernameFormat, normalizeUsername, resolveLoginEmail } from "../lib/authUsername";
+import { shadowCompat } from "../lib/rnWebStyleCompat";
 import { supabase } from "../lib/supabase";
 import { uploadProfileAvatar } from "../lib/uploadProfileAvatar";
 import { colors } from "../theme/colors";
@@ -63,6 +64,7 @@ export function ProfileScreen({ navigation }: Props) {
   const [profileUsername, setProfileUsername] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const { data: session } = await supabase.auth.getSession();
@@ -101,6 +103,22 @@ export function ProfileScreen({ navigation }: Props) {
     });
     return () => sub.remove();
   }, [refresh]);
+
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const mail = session?.user.email ?? null;
+      const uid = session?.user.id ?? null;
+      setSessionEmail(mail);
+      setUserId(uid);
+      if (!uid) {
+        setProfileUsername(null);
+        setAvatarUrl(null);
+        setDisplayName(mail?.split("@")[0] ?? "Traveler");
+        setAvatarBust(Date.now());
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
 
   const signUp = async () => {
     setMessage(null);
@@ -183,15 +201,22 @@ export function ProfileScreen({ navigation }: Props) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // Ensure UI updates immediately even if network is slow/unavailable.
+    setSessionEmail(null);
+    setUserId(null);
+    setProfileUsername(null);
+    setAvatarUrl(null);
+    setDisplayName("Traveler");
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) {
+      // Keep this silent-ish; user stays signed-in if signOut fails.
+      setMessage(error.message);
+    }
     await refresh();
   };
 
   const confirmSignOut = () => {
-    Alert.alert("Log out", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Log out", style: "destructive", onPress: () => void signOut() },
-    ]);
+    setLogoutOpen(true);
   };
 
   const openRoot = (name: ProfileStackLink) => {
@@ -288,7 +313,42 @@ export function ProfileScreen({ navigation }: Props) {
         : null;
 
   return (
-    <ScrollView style={styles.page} contentContainerStyle={{ paddingBottom: 32 }} bounces={false}>
+    <ScrollView
+      style={styles.page}
+      contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 110 }}
+      bounces={false}
+    >
+      <Modal visible={logoutOpen} transparent animationType="fade" onRequestClose={() => setLogoutOpen(false)}>
+        <Pressable style={styles.logoutOverlay} onPress={() => setLogoutOpen(false)} />
+        <View style={styles.logoutWrap} pointerEvents="box-none">
+          <View style={styles.logoutModal}>
+            <View style={styles.logoutIconWrap}>
+              <Ionicons name="log-out-outline" size={22} color={colors.danger} />
+            </View>
+            <Text style={styles.logoutTitle}>Log out?</Text>
+            <Text style={styles.logoutSub}>Are you sure you want to log out of your account?</Text>
+
+            <View style={styles.logoutBtns}>
+              <Pressable
+                style={({ pressed }) => [styles.logoutBtn, styles.logoutBtnGhost, pressed && { opacity: 0.9 }]}
+                onPress={() => setLogoutOpen(false)}
+              >
+                <Text style={styles.logoutBtnGhostTxt}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.logoutBtn, styles.logoutBtnDanger, pressed && { opacity: 0.92 }]}
+                onPress={() => {
+                  setLogoutOpen(false);
+                  void signOut();
+                }}
+              >
+                <Text style={styles.logoutBtnDangerTxt}>Log out</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 18) }]}>
         <View style={styles.headerRow}>
           <TabInlineBackButton iconColor={colors.white} size={28} />
@@ -657,4 +717,33 @@ const styles = StyleSheet.create({
   authModeTxtOn: {
     color: "#fff",
   },
+
+  // Logout confirm modal
+  logoutOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(15, 23, 42, 0.55)" },
+  logoutWrap: { flex: 1, justifyContent: "center", paddingHorizontal: 18 },
+  logoutModal: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadowCompat({ opacity: 0.18, radius: 22, offsetY: 12, elevation: 12 }),
+  },
+  logoutIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: "rgba(239,68,68,0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  logoutTitle: { fontSize: 18, fontWeight: "900", color: colors.navy },
+  logoutSub: { marginTop: 6, fontSize: 13.5, fontWeight: "600", color: colors.muted2, lineHeight: 18 },
+  logoutBtns: { flexDirection: "row", gap: 10, marginTop: 16 },
+  logoutBtn: { flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+  logoutBtnGhost: { backgroundColor: "rgba(15,23,42,0.06)", borderWidth: 1, borderColor: "rgba(148,163,184,0.30)" },
+  logoutBtnGhostTxt: { fontSize: 14.5, fontWeight: "800", color: colors.navy },
+  logoutBtnDanger: { backgroundColor: colors.danger },
+  logoutBtnDangerTxt: { fontSize: 14.5, fontWeight: "900", color: "#fff" },
 });

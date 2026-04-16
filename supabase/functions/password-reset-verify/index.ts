@@ -1,6 +1,6 @@
-import { corsPreflight, getOtpPepper, getServiceClient, isValidEmail, json, normalizeEmail, randomResetToken, sha256Hex } from "../_shared/passwordReset.ts";
+import { AccountType, corsPreflight, getOtpPepper, getProfileRoleByEmail, getServiceClient, isValidEmail, json, labelForAccountType, normalizeEmail, randomResetToken, requiredRoleForAccountType, sha256Hex } from "../_shared/passwordReset.ts";
 
-type Body = { email?: string; otp?: string };
+type Body = { email?: string; otp?: string; account_type?: AccountType };
 
 const RESET_TOKEN_TTL_MS = 10 * 60 * 1000;
 
@@ -18,11 +18,23 @@ Deno.serve(async (req) => {
 
   const email = normalizeEmail(body.email ?? "");
   const otp = String(body.otp ?? "").trim();
+  const accountType = (body.account_type ?? "user") as AccountType;
   if (!isValidEmail(email) || !/^\d{6}$/.test(otp)) {
     return json({ error: "Invalid OTP" }, 400);
   }
 
   const supabase = await getServiceClient();
+
+  try {
+    const role = await getProfileRoleByEmail(email);
+    const need = requiredRoleForAccountType(accountType);
+    if (!role || role !== need) {
+      return json({ error: `Email does not exist in a ${labelForAccountType(accountType)} account.` }, 400);
+    }
+  } catch (e) {
+    console.error("[password-reset-verify] role check failed:", e);
+    return json({ error: "Unable to verify OTP" }, 500);
+  }
 
   const { data: row, error } = await supabase
     .from("password_reset_otps")

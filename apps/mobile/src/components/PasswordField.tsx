@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
+  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -91,6 +92,13 @@ const styles = StyleSheet.create({
     paddingRight: 8,
     fontSize: 15,
     color: colors.text,
+    ...(Platform.OS === "web"
+      ? ({
+          outlineStyle: "none",
+          outlineWidth: 0,
+          boxShadow: "none",
+        } as any)
+      : null),
   },
   inlineWrap: {
     flex: 1,
@@ -103,6 +111,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 16,
     color: colors.text,
+    ...(Platform.OS === "web"
+      ? ({
+          outlineStyle: "none",
+          outlineWidth: 0,
+          boxShadow: "none",
+        } as any)
+      : null),
   },
   eyeBtn: {
     padding: 8,

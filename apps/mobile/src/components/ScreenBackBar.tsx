@@ -38,11 +38,16 @@ export function useTabBackAction(): { visible: boolean; onPress: () => void } {
   const atHomeTabRoot = routeName === "Home" || routeName === "HomeMain";
   const canPopStack = navigation.canGoBack();
   const tabNav = navigation.getParent() as NavigationProp<ParamListBase> | undefined;
-  const visible = canPopStack || !atHomeTabRoot;
+  const canPopTabs = Boolean(tabNav?.canGoBack?.());
+  const visible = canPopStack || canPopTabs || !atHomeTabRoot;
 
   const onPress = () => {
     if (canPopStack) {
       navigation.goBack();
+      return;
+    }
+    if (canPopTabs) {
+      tabNav?.goBack();
       return;
     }
     if (!atHomeTabRoot) {

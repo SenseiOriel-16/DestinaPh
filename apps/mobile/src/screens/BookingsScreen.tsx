@@ -4,6 +4,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   FlatList,
   Image,
   Modal,
@@ -35,6 +36,7 @@ type Row = {
   business_id: string;
   owner_note: string | null;
   check_in: string | null;
+  check_out: string | null;
   arrival_time: string | null;
   payment_method: string | null;
   payment_proof_storage_path: string | null;
@@ -76,6 +78,42 @@ type BookingDetail = {
   } | null;
 } | null;
 
+function dateStartMs(input: string | null | undefined): number | null {
+  const s = (input ?? "").trim();
+  if (!s) return null;
+  const t = new Date(s).getTime();
+  if (Number.isNaN(t)) return null;
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function todayStartMs(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function canDeleteCompletedBooking(r: Row): boolean {
+  // Only confirmed/rejected are deletable, and only AFTER the visit is completed.
+  if (r.status !== "confirmed" && r.status !== "cancelled") return false;
+  const cat = (r.businesses?.categories?.slug ?? "").trim();
+  const isResort = cat === "resorts-leisure";
+
+  const tToday = todayStartMs();
+  const tIn = dateStartMs(r.check_in);
+  const tOut = dateStartMs(r.check_out);
+
+  if (isResort) {
+    // Prefer check-out if available; otherwise fall back to check-in.
+    const done = (tOut ?? tIn);
+    return done != null && done < tToday;
+  }
+
+  // Food/Nature: use the visit date (check_in).
+  return tIn != null && tIn < tToday;
+}
+
 function formatTime12(input: string | null | undefined): string {
   const raw = (input ?? "").trim();
   if (!raw) return "—";
@@ -88,6 +126,19 @@ function formatTime12(input: string | null | undefined): string {
   const ap = hh >= 12 ? "PM" : "AM";
   if (mm === 0) return `${h12} ${ap}`;
   return `${h12}:${String(mm).padStart(2, "0")} ${ap}`;
+}
+
+function parseYmdLocal(input: string): Date | null {
+  const s = input.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  // Local date (avoid timezone shift)
+  return new Date(y, mo - 1, d, 12, 0, 0, 0);
 }
 
 function formatRequestedParts(iso: string): { date: string; time: string } {
@@ -110,7 +161,7 @@ function statusForTab(tab: TabFilter, status: string): boolean {
 
 function badgeStyle(status: string) {
   if (status === "confirmed") return { bg: colors.successBg, fg: colors.successText, label: "Confirmed" };
-  if (status === "cancelled") return { bg: colors.border, fg: colors.muted2, label: "Rejected" };
+  if (status === "cancelled") return { bg: "rgba(239,68,68,0.14)", fg: "#991b1b", label: "Rejected" };
   if (status === "pending_review")
     return { bg: colors.warningBg, fg: colors.warningText, label: "Awaiting host" };
   return { bg: colors.warningBg, fg: colors.warningText, label: "Pending" };
@@ -135,6 +186,8 @@ export function BookingsScreen({ navigation, route }: Props) {
   const [hint, setHint] = useState<string | null>(null);
   const [tab, setTab] = useState<TabFilter>("upcoming");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailErr, setDetailErr] = useState<string | null>(null);
@@ -159,7 +212,7 @@ export function BookingsScreen({ navigation, route }: Props) {
     const { data, error } = await supabase
       .from("bookings")
       .select(
-        "id,status,requested_at,owner_note,business_id,check_in,arrival_time,payment_method,payment_proof_storage_path,businesses(name,municipalities(name),barangays(name),provinces(name),categories(slug,name),business_photos(storage_path,sort_order))",
+        "id,status,requested_at,owner_note,business_id,check_in,check_out,arrival_time,payment_method,payment_proof_storage_path,businesses(name,municipalities(name),barangays(name),provinces(name),categories(slug,name),business_photos(storage_path,sort_order))",
       )
       .eq("user_id", uid)
       .order("requested_at", { ascending: false });
@@ -256,6 +309,72 @@ export function BookingsScreen({ navigation, route }: Props) {
       }),
     [rows, tab, categoryFilter],
   );
+
+  useEffect(() => {
+    // Selection only makes sense in confirmed/rejected.
+    if (tab === "upcoming") {
+      setSelectMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [tab]);
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectedList = useMemo(() => Array.from(selectedIds), [selectedIds]);
+  const selectedRows = useMemo(() => {
+    const map = new Map(rows.map((r) => [r.id, r] as const));
+    return selectedList.map((id) => map.get(id)).filter((x): x is Row => Boolean(x));
+  }, [rows, selectedList]);
+
+  const deleteSelected = useCallback(async () => {
+    if (!selectedList.length) return;
+    const blocked = selectedRows.filter((r) => !canDeleteCompletedBooking(r));
+    if (blocked.length) {
+      Alert.alert(
+        "Cannot delete",
+        "Some selected bookings cannot be deleted because their visit date is not completed yet.",
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Delete bookings?",
+      `Are you sure you want to delete ${selectedList.length} booking(s)? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              const { data: session } = await supabase.auth.getSession();
+              const uid = session.session?.user.id;
+              if (!uid) return;
+              const { error } = await supabase
+                .from("bookings")
+                .delete()
+                .in("id", selectedList)
+                .eq("user_id", uid);
+              if (error) {
+                Alert.alert("Delete failed", error.message);
+                return;
+              }
+              setSelectedIds(new Set());
+              setSelectMode(false);
+              await load();
+            })();
+          },
+        },
+      ],
+    );
+  }, [load, selectedList, selectedRows]);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(BOOKING_OPEN_DETAIL_EVENT, (payload: { bookingId?: string }) => {
@@ -402,6 +521,14 @@ export function BookingsScreen({ navigation, route }: Props) {
                     </Text>
                   </View>
                 ) : null}
+                {detail.status === "confirmed" ? (
+                  <View style={styles.modalNoteBox}>
+                    <Text style={styles.modalNoteTitle}>NOTE</Text>
+                    <Text style={styles.modalNoteText}>
+                      Once your reservation is confirmed, you can no longer cancel or request a refund.
+                    </Text>
+                  </View>
+                ) : null}
                 {detail.notes?.trim() ? (
                   <View style={styles.modalNotesBox}>
                     <Text style={styles.modalNotesTitle}>Your notes</Text>
@@ -436,6 +563,37 @@ export function BookingsScreen({ navigation, route }: Props) {
             </View>
 
             <View style={styles.sheet}>
+              {(tab === "confirmed" || tab === "rejected") ? (
+                <View style={styles.bulkRow}>
+                  <Pressable
+                    onPress={() => {
+                      setSelectMode((v) => !v);
+                      setSelectedIds(new Set());
+                    }}
+                    style={({ pressed }) => [styles.bulkBtn, pressed && { opacity: 0.85 }]}
+                  >
+                    <Ionicons name={selectMode ? "close" : "checkbox-outline"} size={18} color={colors.primaryTealDeep} />
+                    <Text style={styles.bulkBtnTxt}>{selectMode ? "Done" : "Select"}</Text>
+                  </Pressable>
+
+                  {selectMode ? (
+                    <Pressable
+                      onPress={() => void deleteSelected()}
+                      disabled={!selectedList.length}
+                      style={({ pressed }) => [
+                        styles.bulkBtnDanger,
+                        !selectedList.length && { opacity: 0.45 },
+                        pressed && selectedList.length ? { opacity: 0.85 } : null,
+                      ]}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                      <Text style={styles.bulkBtnDangerTxt}>
+                        Delete{selectedList.length ? ` (${selectedList.length})` : ""}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
               <View style={styles.tabs}>
                 {(
                   [
@@ -477,18 +635,27 @@ export function BookingsScreen({ navigation, route }: Props) {
         ItemSeparatorComponent={() => <View style={{ height: 0 }} />}
         renderItem={({ item }) => {
           const b = badgeStyle(item.status);
-          const when = new Date(item.requested_at);
           const visitDate = (item.check_in ?? "").trim();
-          const visitTime = (item.arrival_time ?? "").trim();
+          const visitTime = formatTime12(item.arrival_time);
+          const req = formatRequestedParts(item.requested_at);
+          const visitBox = visitDate ? parseYmdLocal(visitDate) : null;
+          const reqBox = new Date(item.requested_at);
+          const boxDate = visitBox ?? reqBox;
           const loc =
             item.businesses?.address_line?.trim() ||
             item.businesses?.municipalities?.name ||
             "Philippines";
           const thumbUrl = firstPhotoPublicUrl(item.businesses?.business_photos);
+          const showSelect = selectMode && (tab === "confirmed" || tab === "rejected");
+          const checked = selectedIds.has(item.id);
           return (
             <Pressable
               style={styles.card}
               onPress={() => {
+                if (showSelect) {
+                  toggleSelected(item.id);
+                  return;
+                }
                 if (item.status === "cancelled" || item.status === "confirmed") {
                   void openBookingDetails(item.id);
                   return;
@@ -496,6 +663,19 @@ export function BookingsScreen({ navigation, route }: Props) {
                 navigation.navigate("Detail", { id: item.business_id });
               }}
             >
+              {showSelect ? (
+                <Pressable
+                  onPress={() => toggleSelected(item.id)}
+                  hitSlop={10}
+                  style={styles.cardCheckHit}
+                >
+                  <Ionicons
+                    name={checked ? "checkbox" : "square-outline"}
+                    size={22}
+                    color={checked ? colors.primaryTeal : colors.muted2}
+                  />
+                </Pressable>
+              ) : null}
               {thumbUrl ? (
                 <Image source={{ uri: thumbUrl }} style={styles.thumb} />
               ) : (
@@ -504,39 +684,54 @@ export function BookingsScreen({ navigation, route }: Props) {
                 </View>
               )}
               <View style={{ flex: 1 }}>
-                <Text style={styles.place}>{item.businesses?.name ?? "Business"}</Text>
-                <Text style={styles.loc}>{loc}</Text>
-                <View style={styles.dateRow}>
-                  <View style={styles.dateBox}>
-                    <Text style={styles.dateMon}>{when.toLocaleString("en-PH", { month: "short" }).toUpperCase()}</Text>
-                    <Text style={styles.dateDay}>{when.getDate()}</Text>
+                <View style={styles.cardTopRow}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.place} numberOfLines={1}>{item.businesses?.name ?? "Business"}</Text>
+                    <Text style={styles.loc} numberOfLines={1}>{loc}</Text>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.dtLabel}>Visit</Text>
-                    <Text style={styles.dtVal}>
-                      {visitDate ? `${visitDate}${visitTime ? ` · ${visitTime}` : ""}` : "—"}
+                  <View style={styles.reqBox}>
+                    <Text style={styles.reqMon}>
+                      {boxDate.toLocaleString("en-PH", { month: "short" }).toUpperCase()}
                     </Text>
-                    <Text style={[styles.dtLabel, { marginTop: 6 }]}>Requested</Text>
-                    <Text style={styles.dtVal}>
-                      {when.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}
-                    </Text>
+                    <Text style={styles.reqDay}>{boxDate.getDate()}</Text>
                   </View>
                 </View>
-                <View style={styles.footer}>
-                  <View style={[styles.pill, { backgroundColor: b.bg }]}>
-                    <Text style={[styles.pillTxt, { color: b.fg }]}>{b.label}</Text>
+
+                <View style={styles.metaBlock}>
+                  <View style={styles.metaCol}>
+                    <Text style={styles.metaLabel}>Visit:</Text>
+                    <Text style={styles.metaVal}>{visitDate || "—"}</Text>
+                    <Text style={styles.metaVal}>{visitTime}</Text>
                   </View>
-                  <Text style={styles.paymentPill} numberOfLines={1}>
-                    {(item.payment_method ?? "—").toString().toUpperCase()}
-                    {item.payment_proof_storage_path ? " · Proof" : ""}
-                  </Text>
-                  {item.status === "cancelled" && item.owner_note?.trim() ? (
-                    <Text style={styles.reason} numberOfLines={1}>
-                      {item.owner_note.trim()}
+                  <View style={styles.metaCol}>
+                    <Text style={styles.metaLabel}>Requested:</Text>
+                    <Text style={styles.metaVal}>{req.date}</Text>
+                    <Text style={styles.metaVal}>{req.time}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.footer}>
+                  <View style={styles.footerLeft}>
+                    <View style={[styles.pill, { backgroundColor: b.bg }]}>
+                      <Text style={[styles.pillTxt, { color: b.fg }]}>{b.label}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.footerRight}>
+                    <Text style={styles.paymentPill} numberOfLines={1}>
+                      {(item.payment_method ?? "—").toString().toUpperCase()}
+                      {item.payment_proof_storage_path ? " · Proof" : ""}
                     </Text>
-                  ) : null}
-                  <Text style={styles.bid}>Booking ID: #{item.id.slice(0, 8)}</Text>
-                  <Ionicons name="chevron-forward" size={18} color={colors.muted2} />
+                    {item.status === "cancelled" && item.owner_note?.trim() ? (
+                      <Text style={styles.reason} numberOfLines={1}>
+                        {item.owner_note.trim()}
+                      </Text>
+                    ) : null}
+                    <View style={styles.footerBottomRow}>
+                      <Text style={styles.bid}>Booking ID: #{item.id.slice(0, 8)}</Text>
+                      <Ionicons name="chevron-forward" size={18} color={colors.muted2} />
+                    </View>
+                  </View>
                 </View>
               </View>
             </Pressable>
@@ -562,7 +757,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   header: {
-    paddingBottom: 14,
+    paddingBottom: 24,
   },
   headerTop: {
     flexDirection: "row",
@@ -585,7 +780,7 @@ const styles = StyleSheet.create({
     color: colors.muted,
   },
   sheet: {
-    marginTop: -28,
+    marginTop: -14,
     backgroundColor: colors.pageBg,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -635,6 +830,37 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 12,
   },
+  bulkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 10,
+  },
+  bulkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(4,120,126,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(4,120,126,0.20)",
+  },
+  bulkBtnTxt: { fontSize: 13, fontWeight: "700", color: colors.primaryTealDeep },
+  bulkBtnDanger: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(239,68,68,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.22)",
+  },
+  bulkBtnDangerTxt: { fontSize: 13, fontWeight: "800", color: colors.danger },
   categoryTab: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -670,6 +896,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadowCompat({ opacity: 0.06, radius: 10, offsetY: 4, elevation: 2 }),
   },
+  cardCheckHit: {
+    alignSelf: "flex-start",
+    paddingTop: 4,
+    paddingRight: 2,
+  },
   thumb: {
     width: 88,
     height: 88,
@@ -692,45 +923,42 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: 2,
   },
-  dateRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginTop: 12,
-  },
-  dateBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: colors.chipIdle,
+  cardTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  reqBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: "rgba(148,163,184,0.14)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(148,163,184,0.18)",
   },
-  dateMon: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: colors.muted2,
-  },
-  dateDay: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: colors.navy,
-  },
-  dtLabel: {
-    fontSize: 11,
-    color: colors.muted,
-    fontWeight: "600",
-  },
-  dtVal: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: colors.text,
-    marginTop: 2,
-  },
+  reqMon: { fontSize: 10, fontWeight: "800", color: colors.muted2 },
+  reqDay: { marginTop: 1, fontSize: 18, fontWeight: "900", color: colors.navy },
+
+  metaBlock: { flexDirection: "row", gap: 14, marginTop: 12 },
+  metaCol: { flex: 1 },
+  metaLabel: { fontSize: 12, fontWeight: "800", color: colors.muted2 },
+  metaVal: { marginTop: 3, fontSize: 13.5, fontWeight: "700", color: colors.text },
+  // (old dateRow/dateBox/dtLabel/dtVal styles no longer used by the card)
   footer: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     marginTop: 12,
+    gap: 8,
+  },
+  footerLeft: {
+    justifyContent: "flex-end",
+  },
+  footerRight: {
+    flex: 1,
+    minWidth: 0,
+  },
+  footerBottomRow: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   paymentPill: {
@@ -840,6 +1068,15 @@ const styles = StyleSheet.create({
   },
   modalNotesTitle: { fontSize: 12, fontWeight: "800", color: colors.primaryTeal, letterSpacing: 0.2 },
   modalNotesText: { marginTop: 6, fontSize: 13.5, fontWeight: "700", color: colors.navy, lineHeight: 18 },
+  modalNoteBox: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(245,158,11,0.22)",
+    backgroundColor: "rgba(245,158,11,0.12)",
+    padding: 12,
+  },
+  modalNoteTitle: { fontSize: 12, fontWeight: "900", color: "#92400e", letterSpacing: 0.2 },
+  modalNoteText: { marginTop: 6, fontSize: 13.5, fontWeight: "700", color: colors.navy, lineHeight: 18 },
   modalFootRow: { marginTop: 4, flexDirection: "row", alignItems: "center", gap: 6 },
   modalFoot: { fontSize: 12, color: colors.muted, fontWeight: "700" },
 });

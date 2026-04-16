@@ -1,6 +1,6 @@
-import { corsPreflight, getOtpPepper, getServiceClient, isValidEmail, json, normalizeEmail, randomOtp6, sendOtpEmail, sha256Hex } from "../_shared/passwordReset.ts";
+import { AccountType, corsPreflight, getOtpPepper, getProfileRoleByEmail, getServiceClient, isValidEmail, json, labelForAccountType, normalizeEmail, randomOtp6, requiredRoleForAccountType, sendOtpEmail, sha256Hex } from "../_shared/passwordReset.ts";
 
-type Body = { email?: string };
+type Body = { email?: string; account_type?: AccountType };
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -18,12 +18,24 @@ Deno.serve(async (req) => {
   }
 
   const email = normalizeEmail(body.email ?? "");
+  const accountType = (body.account_type ?? "user") as AccountType;
   if (!isValidEmail(email)) {
-    // Generic response to avoid enumeration
-    return json({ ok: true });
+    return json({ error: "Invalid email" }, 400);
   }
 
   const supabase = await getServiceClient();
+
+  // Enforce account-type ownership (admin/client/user).
+  try {
+    const role = await getProfileRoleByEmail(email);
+    const need = requiredRoleForAccountType(accountType);
+    if (!role || role !== need) {
+      return json({ error: `Email does not exist in a ${labelForAccountType(accountType)} account.` }, 400);
+    }
+  } catch (e) {
+    console.error("[password-reset-request] role check failed:", e);
+    return json({ error: "Unable to process request" }, 500);
+  }
 
   // Rate limit per email.
   const { data: last } = await supabase
@@ -62,7 +74,7 @@ Deno.serve(async (req) => {
     return json({ ok: true });
   }
 
-  // Send email. Still return ok even on email failure to avoid enumeration.
+  // Send email.
   try {
     await sendOtpEmail(email, otp);
   } catch (e) {

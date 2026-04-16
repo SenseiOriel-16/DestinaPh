@@ -49,7 +49,7 @@ export function ForgotPasswordPage() {
     setError(null);
     try {
       const { data, error: fnErr } = await supabase.functions.invoke(FN_PASSWORD_RESET_REQUEST, {
-        body: { email: email.trim().toLowerCase() },
+        body: { email: email.trim().toLowerCase(), account_type: "client" },
       });
       if (fnErr) {
         setError(fnErr.message);
@@ -68,7 +68,7 @@ export function ForgotPasswordPage() {
     setError(null);
     try {
       const { data, error: fnErr } = await supabase.functions.invoke(FN_PASSWORD_RESET_VERIFY, {
-        body: { email: email.trim().toLowerCase(), otp: otp.trim() },
+        body: { email: email.trim().toLowerCase(), otp: otp.trim(), account_type: "client" },
       });
       if (fnErr) {
         setError(fnErr.message);
@@ -96,7 +96,12 @@ export function ForgotPasswordPage() {
     setError(null);
     try {
       const { error: fnErr } = await supabase.functions.invoke(FN_PASSWORD_RESET_CONFIRM, {
-        body: { email: email.trim().toLowerCase(), reset_token: resetToken, new_password: newPassword },
+        body: {
+          email: email.trim().toLowerCase(),
+          reset_token: resetToken,
+          new_password: newPassword,
+          account_type: "client",
+        },
       });
       if (fnErr) {
         setError(fnErr.message);

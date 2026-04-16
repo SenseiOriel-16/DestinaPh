@@ -192,7 +192,8 @@ function makeRanked(prefs: GeneratePrefs, b: BizCandidate): RankedCandidate | nu
     const when = prefs.foodVisitTime;
     if (when) {
       const bt = b.bestVisitTimes ?? [];
-      if (!bt.includes(when)) return null;
+      const has = bt.some((x) => String(x).toLowerCase() === String(when).toLowerCase());
+      if (!has) return null;
     }
     const target = prefs.foodBudgetPerPerson;
     if (target != null) {

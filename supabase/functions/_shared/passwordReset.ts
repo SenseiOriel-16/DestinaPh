@@ -183,3 +183,47 @@ export async function sendOtpEmail(to: string, otp: string) {
   });
 }
 
+export type AccountType = "admin" | "client" | "user";
+
+export function requiredRoleForAccountType(t: AccountType): "admin" | "business_owner" | "consumer" {
+  if (t === "admin") return "admin";
+  if (t === "client") return "business_owner";
+  return "consumer";
+}
+
+export function labelForAccountType(t: AccountType): string {
+  if (t === "admin") return "admin";
+  if (t === "client") return "business owner";
+  return "user";
+}
+
+async function getAuthUserIdByEmailViaAdminApi(email: string): Promise<string | null> {
+  const url = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL");
+  if (!url) throw new Error("Missing env var: SUPABASE_URL (or VITE_SUPABASE_URL)");
+  const serviceKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+
+  const res = await fetch(`${url}/auth/v1/admin/users?email=${encodeURIComponent(email)}`, {
+    method: "GET",
+    headers: {
+      apikey: serviceKey,
+      authorization: `Bearer ${serviceKey}`,
+    },
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`admin users lookup failed: ${res.status} ${t}`);
+  }
+  const data = (await res.json()) as { users?: Array<{ id: string; email?: string }> };
+  const u = data.users?.[0];
+  return u?.id ?? null;
+}
+
+export async function getProfileRoleByEmail(email: string): Promise<string | null> {
+  const supabase = await getServiceClient();
+  const uid = await getAuthUserIdByEmailViaAdminApi(email);
+  if (!uid) return null;
+  const { data: p, error } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
+  if (error || !p) return null;
+  return (p as any).role ?? null;
+}
+

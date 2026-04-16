@@ -165,12 +165,12 @@ export function OwnerMessagesPage() {
         </div>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 16 }}>
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: 14, borderBottom: "1px solid var(--border)", fontWeight: 800 }}>Inbox</div>
-          <div style={{ maxHeight: "70vh", overflow: "auto" }}>
+      <div className="owner-chat__grid">
+        <div className="card owner-chat__card owner-chat__inbox">
+          <div className="owner-chat__inbox-head">Inbox</div>
+          <div className="owner-chat__inbox-list">
             {convs.length === 0 ? (
-              <div style={{ padding: 14, color: "var(--muted)" }}>No messages yet.</div>
+              <div className="owner-chat__empty">No messages yet.</div>
             ) : (
               convs.map((c) => {
                 const on = c.id === activeId;
@@ -180,18 +180,10 @@ export function OwnerMessagesPage() {
                     key={c.id}
                     type="button"
                     onClick={() => setActiveId(c.id)}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      padding: 14,
-                      border: "none",
-                      background: on ? "rgba(8,143,143,0.10)" : "transparent",
-                      borderBottom: "1px solid var(--border)",
-                      cursor: "pointer",
-                    }}
+                    className={`owner-chat__conv ${on ? "owner-chat__conv--active" : ""}`}
                   >
-                    <div style={{ fontWeight: 800, fontSize: 14 }}>{title}</div>
-                    <div style={{ marginTop: 4, color: "var(--muted)", fontSize: 12 }}>
+                    <div className="owner-chat__conv-title">{title}</div>
+                    <div className="owner-chat__conv-preview">
                       {c.last_message_text ?? "—"}
                     </div>
                   </button>
@@ -201,24 +193,24 @@ export function OwnerMessagesPage() {
           </div>
         </div>
 
-        <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: "70vh" }}>
-          <div style={{ fontWeight: 900, fontSize: 16 }}>
+        <div className="card owner-chat__card owner-chat__thread">
+          <div className="owner-chat__thread-title">
             {active ? (active.businesses?.name ?? "Messages") : "Messages"}
           </div>
-          <div style={{ marginTop: 10, flex: 1, overflow: "auto", padding: "10px 0" }}>
+          <div className="owner-chat__thread-body">
             {msgs.map((m) => (
-              <div key={m.id} style={{ padding: "8px 0" }}>
-                {m.text ? <div style={{ fontWeight: 600 }}>{m.text}</div> : null}
+              <div key={m.id} className="owner-chat__msg">
+                {m.text ? <div className="owner-chat__msg-text">{m.text}</div> : null}
                 {m.image_storage_path ? (
                   imgMap[m.id] ? (
                     <a href={imgMap[m.id]} target="_blank" rel="noreferrer">
-                      <img src={imgMap[m.id]} alt="chat" style={{ maxWidth: 360, borderRadius: 12, marginTop: 6 }} />
+                      <img src={imgMap[m.id]} alt="chat" className="owner-chat__msg-img" />
                     </a>
                   ) : (
-                    <div style={{ color: "var(--muted)" }}>Image…</div>
+                    <div className="owner-chat__msg-meta">Image…</div>
                   )
                 ) : null}
-                <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 3 }}>
+                <div className="owner-chat__msg-meta">
                   {new Date(m.created_at).toLocaleString()}
                 </div>
               </div>

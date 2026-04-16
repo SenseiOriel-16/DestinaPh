@@ -1,6 +1,6 @@
-import { corsPreflight, getOtpPepper, getServiceClient, isValidEmail, json, normalizeEmail, sha256Hex } from "../_shared/passwordReset.ts";
+import { AccountType, corsPreflight, getOtpPepper, getProfileRoleByEmail, getServiceClient, isValidEmail, json, labelForAccountType, normalizeEmail, requiredRoleForAccountType, sha256Hex } from "../_shared/passwordReset.ts";
 
-type Body = { email?: string; reset_token?: string; new_password?: string };
+type Body = { email?: string; reset_token?: string; new_password?: string; account_type?: AccountType };
 
 async function getUserIdByEmailViaAdminApi(email: string): Promise<string | null> {
   const url = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL");
@@ -60,11 +60,22 @@ Deno.serve(async (req) => {
   const email = normalizeEmail(body.email ?? "");
   const resetToken = String(body.reset_token ?? "").trim();
   const newPassword = String(body.new_password ?? "");
+  const accountType = (body.account_type ?? "user") as AccountType;
 
   if (!isValidEmail(email) || resetToken.length < 20) return json({ error: "Invalid request" }, 400);
   if (newPassword.length < 6) return json({ error: "Password must be at least 6 characters." }, 400);
 
   const supabase = await getServiceClient();
+  try {
+    const role = await getProfileRoleByEmail(email);
+    const need = requiredRoleForAccountType(accountType);
+    if (!role || role !== need) {
+      return json({ error: `Email does not exist in a ${labelForAccountType(accountType)} account.` }, 400);
+    }
+  } catch (e) {
+    console.error("[password-reset-confirm] role check failed:", e);
+    return json({ error: "Unable to reset password." }, 500);
+  }
   const pepper = getOtpPepper();
   const tokenHash = await sha256Hex(`${email}:${resetToken}:${pepper}`);
 

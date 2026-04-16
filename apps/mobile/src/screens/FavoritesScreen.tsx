@@ -190,43 +190,46 @@ export function FavoritesScreen({ navigation }: Props) {
               ? "No longer listed"
               : b.short_description?.trim() || formatBusinessAddress(b);
           return (
-            <Pressable
-              style={styles.card}
-              onPress={() => {
-                if (b.status === "approved")
-                  navigation.navigate("Main", {
-                    screen: "Home",
-                    params: { screen: "Detail", params: { id: b.id } },
-                  });
-                else Alert.alert("DestinaPH", "This listing is no longer available.");
-              }}
-            >
-              <View style={styles.thumbWrap}>
-                {thumb ? (
-                  <Image source={{ uri: thumb }} style={styles.thumb} resizeMode="cover" />
-                ) : (
-                  <View style={[styles.thumb, styles.thumbPh]}>
-                    <Ionicons name="image-outline" size={28} color={colors.muted2} />
-                  </View>
-                )}
-              </View>
-              <View style={styles.cardBody}>
-                <Text style={styles.cardTitle} numberOfLines={2}>
-                  {b.name}
-                </Text>
-                <Text style={styles.cardSub} numberOfLines={2}>
-                  {subtitle}
-                </Text>
-              </View>
+            <View style={styles.card}>
+              <Pressable
+                style={styles.cardMain}
+                onPress={() => {
+                  if (b.status === "approved")
+                    navigation.navigate("Main", {
+                      screen: "Home",
+                      params: { screen: "Detail", params: { id: b.id } },
+                    });
+                  else Alert.alert("DestinaPH", "This listing is no longer available.");
+                }}
+              >
+                <View style={styles.thumbWrap}>
+                  {thumb ? (
+                    <Image source={{ uri: thumb }} style={styles.thumb} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.thumb, styles.thumbPh]}>
+                      <Ionicons name="image-outline" size={28} color={colors.muted2} />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardTitle} numberOfLines={2}>
+                    {b.name}
+                  </Text>
+                  <Text style={styles.cardSub} numberOfLines={2}>
+                    {subtitle}
+                  </Text>
+                </View>
+              </Pressable>
               <Pressable
                 hitSlop={10}
                 onPress={() => removeFavorite(item.id, b.name)}
                 style={styles.trashBtn}
+                accessibilityRole="button"
                 accessibilityLabel="Remove from favorites"
               >
                 <Ionicons name="trash-outline" size={22} color={colors.danger} />
               </Pressable>
-            </Pressable>
+            </View>
           );
         }}
       />
@@ -298,6 +301,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     gap: 12,
+  },
+  cardMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minWidth: 0,
   },
   thumbWrap: {
     borderRadius: 12,

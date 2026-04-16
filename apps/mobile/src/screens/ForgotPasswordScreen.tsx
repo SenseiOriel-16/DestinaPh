@@ -6,6 +6,7 @@ import type { RootStackParamList } from "../../App";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 import { PasswordField } from "../components/PasswordField";
+import { FieldShell, fieldTextInputStyle } from "../ui/FieldShell";
 
 /** Supabase Edge Function **slug** (last path segment). */
 const FN_PASSWORD_RESET_REQUEST =
@@ -55,7 +56,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
     setMessage(null);
     try {
       const { data, error } = await supabase.functions.invoke(FN_PASSWORD_RESET_REQUEST, {
-        body: { email: email.trim().toLowerCase() },
+        body: { email: email.trim().toLowerCase(), account_type: "user" },
       });
       if (error) {
         setMessage(error.message);
@@ -74,7 +75,7 @@ export function ForgotPasswordScreen({ navigation }: Props) {
     setMessage(null);
     try {
       const { data, error } = await supabase.functions.invoke(FN_PASSWORD_RESET_VERIFY, {
-        body: { email: email.trim().toLowerCase(), otp: otp.trim() },
+        body: { email: email.trim().toLowerCase(), otp: otp.trim(), account_type: "user" },
       });
       if (error) {
         setMessage(error.message);
@@ -102,7 +103,12 @@ export function ForgotPasswordScreen({ navigation }: Props) {
     setMessage(null);
     try {
       const { error } = await supabase.functions.invoke(FN_PASSWORD_RESET_CONFIRM, {
-        body: { email: email.trim().toLowerCase(), reset_token: resetToken, new_password: newPassword },
+        body: {
+          email: email.trim().toLowerCase(),
+          reset_token: resetToken,
+          new_password: newPassword,
+          account_type: "user",
+        },
       });
       if (error) {
         setMessage(error.message);
@@ -130,37 +136,35 @@ export function ForgotPasswordScreen({ navigation }: Props) {
         {step === "email" ? (
           <>
             <Text style={styles.label}>Email</Text>
-            <View style={styles.inputShell}>
-              <Ionicons name="mail-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
+            <FieldShell icon="mail-outline">
               <TextInput
-                style={styles.input}
+                style={fieldTextInputStyle}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
                 value={email}
                 onChangeText={setEmail}
                 placeholder="email@halimbawa.com"
-                placeholderTextColor={colors.muted2}
+                placeholderTextColor="rgba(100,116,139,0.5)"
               />
-            </View>
+            </FieldShell>
           </>
         ) : null}
 
         {step === "otp" ? (
           <>
             <Text style={styles.label}>Enter OTP</Text>
-            <View style={styles.inputShell}>
-              <Ionicons name="keypad-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
+            <FieldShell icon="keypad-outline">
               <TextInput
-                style={styles.input}
+                style={fieldTextInputStyle}
                 inputMode="numeric"
                 keyboardType="number-pad"
                 value={otp}
                 onChangeText={(t) => setOtp(t.replace(/[^\d]/g, "").slice(0, 6))}
                 placeholder="6 digits"
-                placeholderTextColor={colors.muted2}
+                placeholderTextColor="rgba(100,116,139,0.5)"
               />
-            </View>
+            </FieldShell>
 
             <View style={styles.row}>
               <Pressable
@@ -194,30 +198,30 @@ export function ForgotPasswordScreen({ navigation }: Props) {
         {step === "reset" ? (
           <>
             <Text style={styles.label}>New password</Text>
-            <View style={styles.inputShell}>
-              <Ionicons name="lock-closed-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
+            <FieldShell icon="lock-closed-outline">
               <PasswordField
                 variant="inline"
-                inputStyle={styles.input}
+                inputStyle={fieldTextInputStyle}
                 value={newPassword}
                 onChangeText={setNewPassword}
                 placeholder="Enter new password"
+                placeholderTextColor="rgba(100,116,139,0.5)"
                 autoComplete="new-password"
               />
-            </View>
+            </FieldShell>
 
             <Text style={styles.label}>Confirm password</Text>
-            <View style={styles.inputShell}>
-              <Ionicons name="lock-closed-outline" size={20} color={colors.muted2} style={styles.inputIcon} />
+            <FieldShell icon="lock-closed-outline">
               <PasswordField
                 variant="inline"
-                inputStyle={styles.input}
+                inputStyle={fieldTextInputStyle}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 placeholder="Confirm new password"
+                placeholderTextColor="rgba(100,116,139,0.5)"
                 autoComplete="new-password"
               />
-            </View>
+            </FieldShell>
           </>
         ) : null}
 
@@ -273,17 +277,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: "900", color: colors.text, letterSpacing: -0.2 },
   sub: { marginTop: 6, color: colors.muted2, fontWeight: "600", lineHeight: 18 },
   label: { marginTop: 14, marginBottom: 8, fontSize: 13, fontWeight: "800", color: colors.text },
-  inputShell: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: "rgba(15, 31, 53, 0.03)",
-    paddingHorizontal: 4,
-  },
-  inputIcon: { marginLeft: 10 },
-  input: { flex: 1, paddingHorizontal: 10, paddingVertical: 12, fontSize: 16, color: colors.text },
+  // Input styles moved to shared `FieldShell`.
   row: { flexDirection: "row", justifyContent: "space-between", marginTop: 12 },
   miniBtn: {
     paddingVertical: 10,

@@ -13,6 +13,7 @@ export function MainTabs() {
   return (
     <Tab.Navigator
       tabBar={(props) => <DestinaTabBar {...props} />}
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,

@@ -2,15 +2,18 @@ import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { CompositeScreenProps, useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   FlatList,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -57,12 +60,26 @@ const categoryChips = [
 
 export function ExploreScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const [rows, setRows] = useState<Row[]>([]);
   const [municipalities, setMunicipalities] = useState<{ id: string; name: string }[]>([]);
   const [category, setCategory] = useState<string>("all");
   const [natureSubcategory, setNatureSubcategory] = useState<"all" | "waterfalls-swimming" | "camping-sightseeing">("all");
   const [municipality, setMunicipality] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(true);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
+  const searchAnim = useRef(new Animated.Value(0)).current;
+  const searchWidthAnim = useRef(new Animated.Value(0)).current;
+  const searchMaxWidth = useMemo(() => {
+    // Header content has horizontal padding 20 (FlatList contentContainerStyle).
+    // searchRow gap = 10, filterCircle width = 48.
+    const pagePad = 20 * 2;
+    const gap = 10;
+    const filterBtn = 48;
+    return Math.max(48, Math.floor(windowWidth - pagePad - gap - filterBtn));
+  }, [windowWidth]);
 
   useFocusEffect(
     useCallback(() => {
@@ -163,77 +180,133 @@ export function ExploreScreen({ navigation, route }: Props) {
       </View>
 
       <View style={styles.searchRow}>
-        <View style={styles.search}>
-          <Ionicons name="search-outline" size={20} color={colors.muted} />
-          <TextInput
-            placeholder="Maghanap ng mga destinasyon…"
-            placeholderTextColor={colors.muted}
-            value={search}
-            onChangeText={setSearch}
-            style={styles.searchInput}
-          />
-        </View>
-        <View style={styles.filterCircle} accessibilityLabel="Filters">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={searchOpen ? "Close search" : "Search"}
+          style={styles.searchHit}
+          onPress={() => {
+            const next = !searchOpen;
+            setSearchOpen(next);
+            if (next) {
+              Animated.parallel([
+                Animated.spring(searchAnim, { toValue: 1, useNativeDriver: true, friction: 9, tension: 90 }),
+                Animated.timing(searchWidthAnim, { toValue: 1, duration: 220, useNativeDriver: false }),
+              ]).start(() => searchInputRef.current?.focus());
+            } else {
+              searchInputRef.current?.blur();
+              Animated.parallel([
+                Animated.timing(searchAnim, { toValue: 0, duration: 160, useNativeDriver: true }),
+                Animated.timing(searchWidthAnim, { toValue: 0, duration: 180, useNativeDriver: false }),
+              ]).start();
+            }
+          }}
+        >
+          <Animated.View
+            style={[
+              styles.searchMorph,
+              {
+                width: searchWidthAnim.interpolate({ inputRange: [0, 1], outputRange: [48, searchMaxWidth] }),
+                opacity: 1,
+                transform: [
+                  { scale: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1] }) },
+                ],
+              },
+            ]}
+          >
+            <Ionicons name="search-outline" size={20} color={colors.muted} />
+            <Animated.View
+              style={{
+                flex: 1,
+                marginLeft: 10,
+                opacity: searchAnim,
+                transform: [
+                  { translateX: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) },
+                ],
+              }}
+              pointerEvents={searchOpen ? "auto" : "none"}
+            >
+              <TextInput
+                ref={searchInputRef}
+                placeholder="Maghanap ng mga destinasyon…"
+                placeholderTextColor={colors.muted}
+                value={search}
+                onChangeText={setSearch}
+                style={styles.searchInput}
+                returnKeyType="search"
+              />
+            </Animated.View>
+          </Animated.View>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Filters"
+          style={styles.filterCircle}
+          onPress={() => setShowFilters((v) => !v)}
+        >
           <Ionicons name="options-outline" size={22} color={colors.white} />
-        </View>
+        </Pressable>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipScroll}
-      >
-        {categoryChips.map((chip) => (
-          <Pressable
-            key={chip.id}
-            onPress={() => {
-              setCategory(chip.id);
-              if (chip.id !== "nature-adventure") setNatureSubcategory("all");
-            }}
-            style={[styles.chip, category === chip.id && styles.chipOn]}
+      {showFilters ? (
+        <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipScroll}
           >
-            <Text style={[styles.chipText, category === chip.id && styles.chipTextOn]}>{chip.label}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+            {categoryChips.map((chip) => (
+              <Pressable
+                key={chip.id}
+                onPress={() => {
+                  setCategory(chip.id);
+                  if (chip.id !== "nature-adventure") setNatureSubcategory("all");
+                }}
+                style={[styles.chip, category === chip.id && styles.chipOn]}
+              >
+                <Text style={[styles.chipText, category === chip.id && styles.chipTextOn]}>{chip.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
 
-      {category === "nature-adventure" ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[styles.chipScroll, { paddingBottom: 8 }]}
-        >
-          {[
-            { id: "all" as const, name: "All nature" },
-            { id: "waterfalls-swimming" as const, name: "Waterfalls / Swimming" },
-            { id: "camping-sightseeing" as const, name: "Camping / Sightseeing" },
-          ].map((s) => (
-            <Pressable
-              key={s.id}
-              onPress={() => setNatureSubcategory(s.id)}
-              style={[styles.chipSm, natureSubcategory === s.id && styles.chipOn]}
+          {category === "nature-adventure" ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={[styles.chipScroll, { paddingBottom: 8 }]}
             >
-              <Text style={[styles.chipTextSm, natureSubcategory === s.id && styles.chipTextOn]}>{s.name}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
+              {[
+                { id: "all" as const, name: "All nature" },
+                { id: "waterfalls-swimming" as const, name: "Waterfalls / Swimming" },
+                { id: "camping-sightseeing" as const, name: "Camping / Sightseeing" },
+              ].map((s) => (
+                <Pressable
+                  key={s.id}
+                  onPress={() => setNatureSubcategory(s.id)}
+                  style={[styles.chipSm, natureSubcategory === s.id && styles.chipOn]}
+                >
+                  <Text style={[styles.chipTextSm, natureSubcategory === s.id && styles.chipTextOn]}>{s.name}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.chipScroll, { paddingBottom: 8 }]}
-      >
-        {[{ id: "all", name: "All towns" }, ...municipalities].map((m) => (
-          <Pressable
-            key={m.id}
-            onPress={() => setMunicipality(m.id)}
-            style={[styles.chipSm, municipality === m.id && styles.chipOn]}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[styles.chipScroll, { paddingBottom: 8 }]}
           >
-            <Text style={[styles.chipTextSm, municipality === m.id && styles.chipTextOn]}>{m.name}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+            {[{ id: "all", name: "All towns" }, ...municipalities].map((m) => (
+              <Pressable
+                key={m.id}
+                onPress={() => setMunicipality(m.id)}
+                style={[styles.chipSm, municipality === m.id && styles.chipOn]}
+              >
+                <Text style={[styles.chipTextSm, municipality === m.id && styles.chipTextOn]}>{m.name}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </>
+      ) : null}
 
       <Text style={styles.listHeading}>Popular Near You</Text>
     </View>
@@ -266,7 +339,6 @@ export function ExploreScreen({ navigation, route }: Props) {
                 <Text style={styles.cardTitle} numberOfLines={2}>
                   {item.name}
                 </Text>
-                <Ionicons name="heart-outline" size={22} color={colors.muted2} />
               </View>
               <Text style={styles.catLine}>{item.categories?.name ?? "Listing"}</Text>
               {(item.categories?.slug ?? "") === "nature-adventure" && item.subcategory ? (
@@ -340,20 +412,37 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: 12,
   },
-  search: {
+  searchHit: {
     flex: 1,
+    ...(Platform.OS === "web"
+      ? ({
+          outlineStyle: "none",
+          outlineWidth: 0,
+          boxShadow: "none",
+        } as any)
+      : null),
+  },
+  searchMorph: {
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: colors.pageBg,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.pageBg,
-    borderRadius: 16,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    overflow: "hidden",
+    alignSelf: "flex-start",
   },
   searchInput: {
     flex: 1,
-    marginLeft: 8,
     fontSize: 15,
     color: colors.text,
+    ...(Platform.OS === "web"
+      ? ({
+          outlineStyle: "none",
+          outlineWidth: 0,
+          boxShadow: "none",
+        } as any)
+      : null),
   },
   chipScroll: {
     flexDirection: "row",
@@ -426,7 +515,7 @@ const styles = StyleSheet.create({
   },
   cardTop: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
     gap: 8,
   },
   cardTitle: {

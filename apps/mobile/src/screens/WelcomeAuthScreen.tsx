@@ -126,15 +126,26 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
       setMessage(resolved.error ?? "We could not find that email or username.");
       return;
     }
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: resolved.email,
       password,
     });
-    setBusy(false);
     if (error) {
+      setBusy(false);
       setMessage(error.message);
       return;
     }
+    const uid = data.user?.id;
+    if (uid) {
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
+      if ((profile as any)?.role !== "consumer") {
+        await supabase.auth.signOut();
+        setBusy(false);
+        setMessage("This email is not a mobile user account. Please use the correct app for your account type.");
+        return;
+      }
+    }
+    setBusy(false);
     goInterests();
   };
 

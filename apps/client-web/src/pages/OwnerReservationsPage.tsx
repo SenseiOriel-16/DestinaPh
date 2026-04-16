@@ -49,6 +49,8 @@ export function OwnerReservationsPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [filter, setFilter] = useState<"all" | "needs_review" | "confirmed" | "cancelled">("needs_review");
   const [category, setCategory] = useState<"all" | "food-dining" | "resorts-leisure" | "nature-adventure">("all");
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bizIds, setBizIds] = useState<string[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(() => {
     try {
@@ -214,6 +216,67 @@ export function OwnerReservationsPage() {
     if (category === "all") return base;
     return base.filter((r) => (r.businesses?.categories?.slug ?? "") === category);
   }, [rows, filter, category]);
+
+  useEffect(() => {
+    if (filter !== "confirmed" && filter !== "cancelled") {
+      setSelectMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [filter]);
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const canDeleteCompleted = (r: Row): boolean => {
+    if (r.status !== "confirmed" && r.status !== "cancelled") return false;
+    const cat = (r.businesses?.categories?.slug ?? "").trim();
+    const isResort = cat === "resorts-leisure";
+    const tToday = (() => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    })();
+    const startMs = (s: string | null | undefined) => {
+      const raw = (s ?? "").trim();
+      if (!raw) return null;
+      const t = new Date(raw).getTime();
+      if (Number.isNaN(t)) return null;
+      const d = new Date(t);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    };
+    const tIn = startMs(r.check_in);
+    const tOut = startMs(r.check_out);
+    if (isResort) return (tOut ?? tIn) != null && (tOut ?? tIn)! < tToday;
+    return tIn != null && tIn < tToday;
+  };
+
+  const deleteSelected = async () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    const map = new Map(rows.map((r) => [r.id, r] as const));
+    const sel = ids.map((id) => map.get(id)).filter((x): x is Row => Boolean(x));
+    const blocked = sel.filter((r) => !canDeleteCompleted(r));
+    if (blocked.length) {
+      setMsg("Some selected reservations cannot be deleted because their visit date is not completed yet.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete ${ids.length} reservation(s)? This cannot be undone.`)) return;
+    const { error } = await supabase.from("bookings").delete().in("id", ids);
+    if (error) {
+      setMsg(error.message);
+      return;
+    }
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    await load();
+  };
 
   const setStatus = async (id: string, status: "confirmed" | "cancelled") => {
     if (status === "cancelled") {
@@ -542,10 +605,39 @@ export function OwnerReservationsPage() {
             </div>
           </div>
 
+          {(filter === "confirmed" || filter === "cancelled") ? (
+            <div className="owner-reservations__toolbar" style={{ marginTop: 10 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => {
+                    setSelectMode((v) => !v);
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  {selectMode ? "Done" : "Select"}
+                </button>
+                {selectMode ? (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    disabled={selectedIds.size === 0}
+                    onClick={() => void deleteSelected()}
+                    title="Delete selected"
+                  >
+                    🗑 Delete{selectedIds.size ? ` (${selectedIds.size})` : ""}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           <div className="owner-reservations__table-wrap">
           <table className="owner-reservations__table">
             <thead>
               <tr>
+                {selectMode ? <th aria-label="Select" /> : null}
                 <th>Property</th>
                 <th>Visit date</th>
                 <th>Visit time</th>
@@ -560,6 +652,17 @@ export function OwnerReservationsPage() {
                 const isUnread = needsHostAction(r.status) && !readIds.has(r.id);
                 return (
                 <tr key={r.id} className={isUnread ? "owner-reservations__row--unread" : undefined}>
+                  {selectMode ? (
+                    <td data-label="Select">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(r.id)}
+                        onChange={() => toggleSelected(r.id)}
+                        disabled={!canDeleteCompleted(r)}
+                        title={!canDeleteCompleted(r) ? "Cannot delete until completed" : "Select"}
+                      />
+                    </td>
+                  ) : null}
                   <td className="owner-reservations__cell-title" data-label="Property">
                     {r.businesses?.name ?? "—"}
                   </td>
@@ -659,7 +762,7 @@ export function OwnerReservationsPage() {
               })}
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="owner-reservations__cell-note">
+                  <td colSpan={selectMode ? 8 : 7} className="owner-reservations__cell-note">
                     No reservations in this view.
                   </td>
                 </tr>

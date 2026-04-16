@@ -465,7 +465,8 @@ textarea {
   font: inherit;
   font-weight: 600;
   outline: none;
-  background: #fff;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .chat-composer__input::placeholder {
@@ -476,6 +477,119 @@ textarea {
 .chat-composer__input:focus {
   box-shadow: var(--focus-ring);
   border-color: rgba(8, 143, 143, 0.4);
+}
+
+/* Owner messages page */
+.owner-chat__grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+
+.owner-chat__card {
+  min-height: 70vh;
+}
+
+.owner-chat__inbox {
+  padding: 0;
+  overflow: hidden;
+}
+
+.owner-chat__inbox-head {
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 800;
+  color: var(--text);
+}
+
+.owner-chat__inbox-list {
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.owner-chat__empty {
+  padding: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.owner-chat__conv {
+  width: 100%;
+  text-align: left;
+  padding: 14px;
+  border: none;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text);
+}
+
+.owner-chat__conv:hover {
+  background: rgba(8, 143, 143, 0.06);
+}
+
+.owner-chat__conv--active {
+  background: rgba(8, 143, 143, 0.12);
+}
+
+.owner-chat__conv-title {
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.owner-chat__conv-preview {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner-chat__thread {
+  display: flex;
+  flex-direction: column;
+}
+
+.owner-chat__thread-title {
+  font-weight: 900;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.owner-chat__thread-body {
+  margin-top: 10px;
+  flex: 1;
+  overflow: auto;
+  padding: 10px 0;
+}
+
+.owner-chat__msg {
+  padding: 8px 0;
+}
+
+.owner-chat__msg-text {
+  font-weight: 600;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.owner-chat__msg-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+  font-weight: 600;
+}
+
+.owner-chat__msg-img {
+  display: block;
+  max-width: 360px;
+  width: 100%;
+  border-radius: 12px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
 }
 
 .support-hint {

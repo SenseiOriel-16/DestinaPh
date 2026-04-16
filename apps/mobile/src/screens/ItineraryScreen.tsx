@@ -601,7 +601,8 @@ export function ItineraryScreen({ navigation }: any) {
             const when = prefs.foodVisitTime;
             if (when) {
               const bt = b.bestVisitTimes ?? [];
-              if (!bt.includes(when)) return null;
+              const has = bt.some((x) => String(x).toLowerCase() === String(when).toLowerCase());
+              if (!has) return null;
             }
             const min = b.estimatedCostMin;
             const max = b.estimatedCostMax;
@@ -1007,6 +1008,43 @@ export function ItineraryScreen({ navigation }: any) {
           }}
         />
       </View>
+
+      {/* Best time to visit (food only) */}
+      {categorySlug === "food-dining" && (
+        <>
+          <SectionRow left="BEST TIME TO VISIT" />
+          <View style={styles.foodTimeRow}>
+            {(["Breakfast", "Lunch", "Dinner"] as const).map((t, idx, arr) => {
+              const active = foodVisitTime === t;
+              return (
+                <Pressable
+                  key={t}
+                  onPress={() => setFoodVisitTime(t)}
+                  style={({ pressed }) => [
+                    styles.foodTimeBtn,
+                    idx === 0 && styles.foodTimeBtnFirst,
+                    idx === arr.length - 1 && styles.foodTimeBtnLast,
+                    active && styles.foodTimeBtnActive,
+                    pressed && { opacity: 0.9 },
+                  ]}
+                >
+                  {active ? (
+                    <LinearGradient
+                      colors={["rgba(253,186,116,0.55)", "rgba(34,197,94,0.12)"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={StyleSheet.absoluteFill}
+                    />
+                  ) : null}
+                  <Text style={[styles.foodTimeTxt, active && styles.foodTimeTxtActive]}>
+                    {t}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      )}
 
       {/* Day / Night (resorts only) */}
       {categorySlug === "resorts-leisure" && (
@@ -1424,6 +1462,35 @@ const styles = StyleSheet.create({
   dayNightEmoji: { fontSize: 18 },
   dayNightTxt: { fontSize: 14, fontWeight: "700", color: "#64748B" },
 
+  // Best time to visit (food)
+  foodTimeRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1.5,
+    borderColor: "rgba(148,163,184,0.22)",
+    backgroundColor: "#FFFFFF",
+    height: 48,
+  },
+  foodTimeBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRightWidth: 1,
+    borderRightColor: "rgba(148,163,184,0.18)",
+    overflow: "hidden",
+  },
+  foodTimeBtnFirst: {},
+  foodTimeBtnLast: { borderRightWidth: 0 },
+  foodTimeBtnActive: {
+    backgroundColor: "rgba(253,186,116,0.18)",
+  },
+  foodTimeTxt: { fontSize: 13.5, fontWeight: "800", color: "rgba(71,85,105,0.85)" },
+  foodTimeTxtActive: { color: "#1E1B4B" },
+
   // Budget
   budgetRow: { flexDirection: "row", gap: 8, marginTop: 10 },
   budgetChipHit: { flex: 1 },
@@ -1523,7 +1590,7 @@ const styles = StyleSheet.create({
   prioRowLabel: { fontSize: 12.5, fontWeight: "800", color: "#1E1B4B" },
   prioSeg: {
     flexDirection: "row",
-    borderRadius: 16,
+    borderRadius: 10,
     overflow: "hidden",
     borderWidth: 1.5,
     borderColor: "rgba(148,163,184,0.22)",

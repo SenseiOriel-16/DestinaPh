@@ -140,7 +140,8 @@ function WebDateInput({
             background: "transparent",
             color: colors.text,
             fontSize: 15,
-            outline: "none",
+            outlineStyle: "none",
+            outlineWidth: 0,
           }}
         />
       </div>
