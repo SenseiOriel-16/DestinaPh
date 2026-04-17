@@ -10,6 +10,7 @@ import {
   DeviceEventEmitter,
   Image,
   Modal,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,

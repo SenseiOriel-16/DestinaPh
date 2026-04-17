@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Platform, StyleSheet, Text, View, type ReactNode } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
+import type { ReactNode } from "react";
 import { shadowCompat } from "../lib/rnWebStyleCompat";
 
 type Props = {
