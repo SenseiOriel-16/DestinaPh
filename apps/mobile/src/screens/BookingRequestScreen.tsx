@@ -16,6 +16,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BookingsStackParamList, ExploreStackParamList, HomeStackParamList } from "../navigation/tabTypes";
 import { type AccommodationItem, normalizeAccommodations } from "../lib/accommodations";
 import { type LocalImage, uploadBookingPaymentProof } from "../lib/uploadBookingProof";
@@ -206,6 +207,7 @@ function normalizeArrivalTime(input: string): string | null {
 
 export function BookingRequestScreen({ route, navigation }: AnyBookingRequestProps) {
   const { businessId } = route.params;
+  const insets = useSafeAreaInsets();
   const [placeName, setPlaceName] = useState("");
   const [categorySlug, setCategorySlug] = useState<string>("");
   const [accommodations, setAccommodations] = useState<AccommodationItem[]>([]);
@@ -474,10 +476,24 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         setSubmitMsg("Please sign in as a traveler to reserve.");
         return;
       }
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
-      if (profile?.role !== "consumer") {
+      const metaRole = (session.session?.user.user_metadata as any)?.role;
+      if (metaRole && metaRole !== "consumer") {
         setSubmitMsg("Reservations are for traveler (consumer) accounts.");
         return;
+      }
+      if (!metaRole) {
+        const { data: profile, error: profErr } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", uid)
+          .maybeSingle();
+        if (profErr) {
+          // If profiles is temporarily broken (e.g. RLS recursion), don't hard-block bookings.
+          console.warn("[DestinaPH] booking role check skipped:", profErr.message);
+        } else if (profile?.role && profile.role !== "consumer") {
+          setSubmitMsg("Reservations are for traveler (consumer) accounts.");
+          return;
+        }
       }
       const bookingId = randomBookingId();
       let proofStoragePath: string | null = null;
@@ -569,6 +585,21 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
 
   return (
     <View style={styles.shell}>
+      <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 10) }]}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={12}
+          style={({ pressed }) => [styles.topBackHit, pressed && { opacity: 0.75 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="chevron-back" size={26} color={colors.navy} />
+        </Pressable>
+        <Text style={styles.topTitle} numberOfLines={1}>
+          Booking
+        </Text>
+        <View style={{ width: 40 }} />
+      </View>
       <Modal visible={doneModalOpen} transparent animationType="fade" onRequestClose={() => setDoneModalOpen(false)}>
         <Pressable style={styles.doneModalOverlay} onPress={() => setDoneModalOpen(false)} />
         <View style={[styles.doneWrap, { pointerEvents: "box-none" as any }]}>
@@ -603,8 +634,12 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
           </View>
         </View>
       </Modal>
-      <ScrollView style={styles.page} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
-        <GlassPanel style={styles.headerCard} contentStyle={styles.headerCardInner} borderRadius={24} intensity={62}>
+      <ScrollView
+        style={styles.page}
+        contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <GlassPanel style={[styles.headerCard, styles.noShadow]} contentStyle={styles.headerCardInner} borderRadius={24} intensity={62}>
           <Text style={styles.title}>Reserve your stay</Text>
           <Text style={styles.sub}>{placeName || "Destination"}</Text>
           <View style={styles.infoBox}>
@@ -617,7 +652,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
           </View>
         </GlassPanel>
 
-        <GlassPanel style={styles.card} contentStyle={styles.cardInner}>
+        <GlassPanel style={[styles.card, styles.noShadow]} contentStyle={styles.cardInner}>
           <View style={styles.cardTitleRow}>
             <Ionicons name="person-circle-outline" size={20} color={colors.navy} />
             <Text style={styles.sectionTitle}>Guest details</Text>
@@ -644,7 +679,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         </GlassPanel>
 
       {!isFood && availableAccs.length > 0 ? (
-        <GlassPanel style={styles.card} contentStyle={styles.cardInner}>
+        <GlassPanel style={[styles.card, styles.noShadow]} contentStyle={styles.cardInner}>
           <View style={styles.cardTitleRow}>
             <Ionicons name="bed-outline" size={20} color={colors.navy} />
             <Text style={styles.sectionTitle}>Accommodation</Text>
@@ -723,7 +758,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         <Text style={styles.warn}>No accommodation types listed — select dates and guests only.</Text>
       ) : null}
 
-      <GlassPanel style={styles.card} contentStyle={styles.cardInner}>
+      <GlassPanel style={[styles.card, styles.noShadow]} contentStyle={styles.cardInner}>
         <View style={styles.cardTitleRow}>
           <Ionicons name="calendar-outline" size={20} color={colors.navy} />
           <Text style={styles.sectionTitle}>Dates & time</Text>
@@ -932,7 +967,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
       </GlassPanel>
 
       {totalAmount > 0 ? (
-        <GlassPanel style={styles.card} contentStyle={styles.cardInner}>
+        <GlassPanel style={[styles.card, styles.noShadow]} contentStyle={styles.cardInner}>
           <View style={styles.cardTitleRow}>
             <Ionicons name="wallet-outline" size={20} color={colors.navy} />
             <Text style={styles.sectionTitle}>Payment summary</Text>
@@ -962,9 +997,9 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         </Text>
       )}
 
-      <GlassPanel style={styles.card} contentStyle={styles.cardInner}>
+      <GlassPanel style={[styles.card, styles.noShadow]} contentStyle={styles.cardInner}>
         <View style={styles.cardTitleRow}>
-          <Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.navy} />
+          <Ionicons name="document-text-outline" size={20} color={colors.navy} />
           <Text style={styles.sectionTitle}>Notes</Text>
         </View>
         <Text style={styles.label}>Notes for the property</Text>
@@ -978,7 +1013,7 @@ export function BookingRequestScreen({ route, navigation }: AnyBookingRequestPro
         />
       </GlassPanel>
 
-      <GlassPanel style={styles.card} contentStyle={styles.cardInner}>
+      <GlassPanel style={[styles.card, styles.noShadow]} contentStyle={styles.cardInner}>
         <View style={styles.cardTitleRow}>
           <Ionicons name="card-outline" size={20} color={colors.navy} />
           <Text style={styles.sectionTitle}>Payment</Text>
@@ -1169,6 +1204,32 @@ const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.pageBg },
   page: { flex: 1, backgroundColor: colors.pageBg },
   center: { justifyContent: "center", alignItems: "center" },
+  topBar: {
+    backgroundColor: colors.pageBg,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  topBackHit: { width: 40, height: 36, alignItems: "center", justifyContent: "center" },
+  topTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 18,
+    fontWeight: "900",
+    color: colors.navy,
+    letterSpacing: -0.2,
+  },
+  noShadow: Platform.select({
+    web: ({ boxShadow: "none" } as any),
+    default: {
+      shadowColor: "transparent",
+      shadowOpacity: 0,
+      shadowRadius: 0,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 0,
+    },
+  }),
   headerCard: { marginTop: 6 },
   headerCardInner: { padding: 16 },
   title: { fontSize: 22, fontWeight: "900", color: colors.navy, letterSpacing: 0.2 },

@@ -27,6 +27,7 @@ export function BookingStatusNotifier() {
   const uidRef = useRef<string | null>(null);
   const pollBusyRef = useRef(false);
   const pollTimerRef = useRef<number | null>(null);
+  const pollBackoffMsRef = useRef<number>(4_000);
 
   const dismiss = useCallback(() => setToast(null), []);
 
@@ -65,12 +66,24 @@ export function BookingStatusNotifier() {
     if (!uid || pollBusyRef.current) return;
     pollBusyRef.current = true;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("bookings")
         .select("id,status,owner_note")
         .eq("user_id", uid)
         .order("requested_at", { ascending: false })
         .limit(60);
+      if (error) {
+        // Avoid hammering the API if DB is unhealthy (e.g. 42P17 recursion).
+        console.warn("[DestinaPH] bookings poll paused:", error.message);
+        if (pollTimerRef.current != null) {
+          window.clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        pollBackoffMsRef.current = Math.min(60_000, Math.max(8_000, pollBackoffMsRef.current * 2));
+        // Try again later (one-shot) in case backend recovers.
+        pollTimerRef.current = window.setInterval(() => void pollOnce(), pollBackoffMsRef.current) as unknown as number;
+        return;
+      }
       for (const r of (data as { id: string; status: string; owner_note?: string | null }[]) ?? []) {
         const prev = lastStatus.current.get(r.id);
         if (!prev) {
@@ -97,12 +110,15 @@ export function BookingStatusNotifier() {
       uidRef.current = uid;
 
       // Seed lastStatus to avoid toasting on initial load.
-      const { data: seed } = await supabase
+      const { data: seed, error: seedErr } = await supabase
         .from("bookings")
         .select("id,status")
         .eq("user_id", uid)
         .order("requested_at", { ascending: false })
         .limit(200);
+      if (seedErr) {
+        console.warn("[DestinaPH] bookings seed skipped:", seedErr.message);
+      }
       for (const r of (seed as { id: string; status: string }[]) ?? []) {
         lastStatus.current.set(r.id, r.status);
       }
@@ -132,7 +148,8 @@ export function BookingStatusNotifier() {
       // Fallback polling in case Realtime is not enabled / app was backgrounded.
       // Run once immediately, then keep a light interval.
       void pollOnce();
-      pollTimerRef.current = window.setInterval(() => void pollOnce(), 4_000) as unknown as number;
+      pollBackoffMsRef.current = 4_000;
+      pollTimerRef.current = window.setInterval(() => void pollOnce(), pollBackoffMsRef.current) as unknown as number;
     };
 
     void setup();

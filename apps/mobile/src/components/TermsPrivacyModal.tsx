@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo } from "react";
+import { BackHandler, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 import { GlassPanel } from "../ui/GlassPanel";
@@ -16,9 +16,14 @@ export function TermsPrivacyModal({
   onClose: () => void;
 }) {
   const updated = useMemo(() => new Date().toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" }), []);
+  const exitApp = useCallback(() => {
+    // Android: closes the app. iOS/Web: best-effort fallback (no programmatic exit).
+    if (Platform.OS === "android") BackHandler.exitApp();
+    else onClose();
+  }, [onClose]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={mustAccept ? undefined : onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={mustAccept ? exitApp : onClose}>
       <Pressable style={styles.overlay} onPress={mustAccept ? undefined : onClose} />
       <View style={[styles.wrap, { pointerEvents: "box-none" as any }]}>
         <GlassPanel
@@ -67,13 +72,17 @@ export function TermsPrivacyModal({
           </ScrollView>
 
           <View style={styles.actions}>
-            {!mustAccept ? (
+            {mustAccept ? (
+              <Pressable style={({ pressed }) => [styles.btnGhost, pressed && styles.btnPressed]} onPress={exitApp}>
+                <Text style={styles.btnGhostTxt}>Exit</Text>
+              </Pressable>
+            ) : (
               <Pressable style={({ pressed }) => [styles.btnGhost, pressed && styles.btnPressed]} onPress={onClose}>
                 <Text style={styles.btnGhostTxt}>Close</Text>
               </Pressable>
-            ) : null}
+            )}
             <Pressable style={({ pressed }) => [styles.btnPrimary, pressed && styles.btnPressed]} onPress={onAccept}>
-              <Text style={styles.btnPrimaryTxt}>{mustAccept ? "I Agree" : "I Agree (Save)"}</Text>
+              <Text style={styles.btnPrimaryTxt}>{mustAccept ? "Agree" : "I Agree (Save)"}</Text>
             </Pressable>
           </View>
         </GlassPanel>
@@ -83,7 +92,7 @@ export function TermsPrivacyModal({
 }
 
 const styles = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(15, 23, 42, 0.55)" },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(15, 23, 42, 0.74)" },
   wrap: { flex: 1, justifyContent: "flex-end", padding: 16 },
   cardOuter: { overflow: "hidden" },
   cardInner: {},

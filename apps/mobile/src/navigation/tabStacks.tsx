@@ -21,13 +21,7 @@ export function HomeStackNavigator() {
       <HomeStack.Screen
         name="BookingRequest"
         component={BookingRequestScreen}
-        options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: colors.navy },
-          headerTintColor: "#fff",
-          headerTitleStyle: { fontWeight: "700" },
-          title: "Reserve",
-        }}
+        options={{ headerShown: false }}
       />
     </HomeStack.Navigator>
   );
@@ -41,13 +35,7 @@ export function ExploreStackNavigator() {
       <ExploreStack.Screen
         name="BookingRequest"
         component={BookingRequestScreen}
-        options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: colors.navy },
-          headerTintColor: "#fff",
-          headerTitleStyle: { fontWeight: "700" },
-          title: "Reserve",
-        }}
+        options={{ headerShown: false }}
       />
     </ExploreStack.Navigator>
   );
@@ -61,13 +49,7 @@ export function BookingsStackNavigator() {
       <BookingsStack.Screen
         name="BookingRequest"
         component={BookingRequestScreen}
-        options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: colors.navy },
-          headerTintColor: "#fff",
-          headerTitleStyle: { fontWeight: "700" },
-          title: "Reserve",
-        }}
+        options={{ headerShown: false }}
       />
     </BookingsStack.Navigator>
   );
@@ -81,13 +63,7 @@ export function ItineraryStackNavigator() {
       <ItineraryStack.Screen
         name="BookingRequest"
         component={BookingRequestScreen}
-        options={{
-          headerShown: true,
-          headerStyle: { backgroundColor: colors.navy },
-          headerTintColor: "#fff",
-          headerTitleStyle: { fontWeight: "700" },
-          title: "Reserve",
-        }}
+        options={{ headerShown: false }}
       />
     </ItineraryStack.Navigator>
   );

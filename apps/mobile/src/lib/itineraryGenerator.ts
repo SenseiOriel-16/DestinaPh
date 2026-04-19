@@ -5,7 +5,7 @@ export type FoodVisitTime = "Breakfast" | "Lunch" | "Dinner";
 
 export type GeneratePrefs = {
   origin: { latitude: number; longitude: number };
-  municipalityId: string;
+  municipalityId: string | null;
   categorySlug: string;
   resortPeriod: ResortPeriod;
   entranceBudget: number | null;
@@ -154,11 +154,13 @@ function normCount(cnt: number | null): number {
 
 function makeRanked(prefs: GeneratePrefs, b: BizCandidate): RankedCandidate | null {
   if (!b.allowReservations) return null;
-  if (!b.latitude || !b.longitude) return null;
-  if (!b.municipalityId || b.municipalityId !== prefs.municipalityId) return null;
+  if (prefs.municipalityId && (!b.municipalityId || b.municipalityId !== prefs.municipalityId)) return null;
   if (!b.categorySlug || b.categorySlug !== prefs.categorySlug) return null;
 
-  const distKm = haversineKm(prefs.origin, { latitude: b.latitude, longitude: b.longitude });
+  const distKm =
+    typeof b.latitude === "number" && typeof b.longitude === "number"
+      ? haversineKm(prefs.origin, { latitude: b.latitude, longitude: b.longitude })
+      : 1e9;
 
   // Budget value: for resorts we use entrance fee for selected period. If missing, treat as large.
   let budgetValue = 1e9;

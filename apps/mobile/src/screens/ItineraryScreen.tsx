@@ -8,6 +8,7 @@ import {
   Easing,
   ImageBackground,
   Image,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -193,7 +194,7 @@ function BudgetChip({
     >
       <Animated.View style={{ transform: m.transform, flex: 1 }}>
         <LinearGradient
-          colors={active ? gradient : ["#F8F9FF", "#F0F3FF"]}
+          colors={active ? ["#22C55E", "#16A34A"] : ["#F8F9FF", "#F0F3FF"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.budgetChip, active && styles.budgetChipActive]}
@@ -367,12 +368,14 @@ export function ItineraryScreen({ navigation }: any) {
   const [view, setView] = useState<"form" | "loading" | "results">("form");
   const scrollRef = useRef<ScrollView | null>(null);
   const [municipalities, setMunicipalities] = useState<{ id: string; name: string }[]>([]);
+  // Empty string means "All municipalities"
   const [municipalityId, setMunicipalityId] = useState<string>("");
   const [categorySlug, setCategorySlug] = useState<string>("resorts-leisure");
   const [natureSubcategory, setNatureSubcategory] = useState<"all" | "waterfalls-swimming" | "camping-sightseeing">("all");
   const [resortPeriod, setResortPeriod] = useState<ResortPeriod>("day");
   const [budgetValue, setBudgetValue] = useState<number | null>(150);
   const [budgetInput, setBudgetInput] = useState<string>("");
+  const [groupSizeInput, setGroupSizeInput] = useState<string>("2");
   const [foodVisitTime, setFoodVisitTime] = useState<FoodVisitTime>("Lunch");
   const [prio1, setPrio1] = useState<PriorityKey>("distance");
   const [prio2, setPrio2] = useState<PriorityKey>("popularity");
@@ -407,12 +410,23 @@ export function ItineraryScreen({ navigation }: any) {
     return budgetValue;
   }, [budgetInput, budgetValue]);
 
-  useFocusEffect(
-    useCallback(() => {
-      setView("form");
-      return () => {};
-    }, []),
+  const derivedGroupSize = useMemo(() => {
+    const raw = groupSizeInput.trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    const v = Math.max(1, Math.floor(n));
+    return v;
+  }, [groupSizeInput]);
+
+  const [detailsStopId, setDetailsStopId] = useState<string | null>(null);
+  const detailsStop = useMemo(
+    () => (detailsStopId ? stops.find((s) => s.id === detailsStopId) ?? null : null),
+    [detailsStopId, stops],
   );
+
+  // Keep the current view when navigating back (e.g., from Detail → Results),
+  // so the user doesn't feel like the back button "double backs".
 
   const loadMunicipalities = useCallback(async () => {
     const { data, error } = await supabase
@@ -434,9 +448,11 @@ export function ItineraryScreen({ navigation }: any) {
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
     setMunicipalities(list);
-    setMunicipalityId((prev) =>
-      prev && list.some((x) => x.id === prev) ? prev : list[0]?.id ?? "",
-    );
+    setMunicipalityId((prev) => {
+      // Keep "All" selection if already chosen.
+      if (prev === "") return "";
+      return prev && list.some((x) => x.id === prev) ? prev : list[0]?.id ?? "";
+    });
   }, []);
 
   useEffect(() => {
@@ -450,25 +466,28 @@ export function ItineraryScreen({ navigation }: any) {
   }, [view]);
 
   const generate = useCallback(async () => {
-    if (!municipalityId) {
-      Alert.alert("Missing municipality", "Please select a municipality first.");
-      return;
-    }
     setView("loading");
     setNoMatchNote(null);
     setFallbackCategory([]);
 
     try {
-      const perm = await Location.requestForegroundPermissionsAsync();
-      const { data, error } = await supabase
+      // Kick off location permission and data fetch in parallel to reduce wait time.
+      const permPromise = Location.requestForegroundPermissionsAsync();
+      let q = supabase
         .from("businesses")
         .select(
+          // Keep payload lean; only 1 photo is needed for cards.
           "id,name,latitude,longitude,subcategory,allow_reservations,operating_day,operating_night,entrance_fee_pesos,entrance_fee_day_pesos,entrance_fee_night_pesos,accommodations,estimated_cost_min_pesos,estimated_cost_max_pesos,best_visit_times,rating_average,rating_count,categories(slug,name),municipalities(id,name),business_photos(storage_path,sort_order)",
         )
         .eq("status", "approved")
-        .eq("allow_reservations", true)
-        .eq("municipality_id", municipalityId)
-        .order("sort_order", { ascending: true, foreignTable: "business_photos" });
+        .eq("allow_reservations", true);
+      if (municipalityId) q = q.eq("municipality_id", municipalityId);
+      const dataPromise = q
+        .order("sort_order", { ascending: true, foreignTable: "business_photos" })
+        .limit(1, { foreignTable: "business_photos" });
+
+      const [perm, bizRes] = await Promise.all([permPromise, dataPromise]);
+      const { data, error } = bizRes as any;
 
       if (error || !data) {
         Alert.alert("Error", error?.message ?? "Could not load destinations.");
@@ -549,11 +568,11 @@ export function ItineraryScreen({ navigation }: any) {
 
       const prefs = {
         origin,
-        municipalityId,
+        municipalityId: municipalityId || null,
         categorySlug,
         resortPeriod,
         entranceBudget: categorySlug === "resorts-leisure" ? derivedBudget : null,
-        groupSize: null,
+        groupSize: derivedGroupSize,
         foodVisitTime: categorySlug === "food-dining" ? foodVisitTime : null,
         foodBudgetPerPerson: categorySlug === "food-dining" ? derivedBudget : null,
         priorities: [prio1, prio2, prio3] as [PriorityKey, PriorityKey, PriorityKey],
@@ -616,7 +635,7 @@ export function ItineraryScreen({ navigation }: any) {
             .map((b) => {
               if (!b.allowReservations) return null;
               if (!b.latitude || !b.longitude) return null;
-              if (!b.municipalityId || b.municipalityId !== prefs.municipalityId) return null;
+              if (prefs.municipalityId && (!b.municipalityId || b.municipalityId !== prefs.municipalityId)) return null;
               if (!b.categorySlug || b.categorySlug !== prefs.categorySlug) return null;
 
               let diff: number | null = null;
@@ -662,8 +681,8 @@ export function ItineraryScreen({ navigation }: any) {
               relaxed.map((x) => ({
                 id: x.b.id,
                 name: x.b.name,
-                latitude: x.b.latitude!,
-                longitude: x.b.longitude!,
+                latitude: x.b.latitude ?? null,
+                longitude: x.b.longitude ?? null,
                 categoryName: x.b.categoryName ?? undefined,
                 photoUrl: x.b.photoUrl,
                 distanceKm: x.distKm,
@@ -671,6 +690,9 @@ export function ItineraryScreen({ navigation }: any) {
                 ratingCount: x.b.ratingCount,
                 estimatedPerPersonPesos: x.estPerPerson,
                 estimatedEntrancePesos: x.entranceFeePesos,
+                estimatedGroupSize: derivedGroupSize,
+                estimatedCostMinPesos: x.b.estimatedCostMin,
+                estimatedCostMaxPesos: x.b.estimatedCostMax,
                 estimatedTotalPesos:
                   prefs.categorySlug === "resorts-leisure" && x.entranceFeePesos != null
                     ? x.entranceFeePesos
@@ -694,8 +716,8 @@ export function ItineraryScreen({ navigation }: any) {
         ranked.map((b) => ({
           id: b.id,
           name: b.name,
-          latitude: b.latitude!,
-          longitude: b.longitude!,
+          latitude: b.latitude ?? null,
+          longitude: b.longitude ?? null,
           categoryName: b.categoryName ?? undefined,
           photoUrl: b.photoUrl,
           distanceKm: Number.isFinite(b.distKm) ? b.distKm : null,
@@ -706,8 +728,10 @@ export function ItineraryScreen({ navigation }: any) {
           estimatedAccommodationPesos: b.accommodationPick?.pricePesos ?? b.accommodationCheapestPesos ?? null,
           estimatedAccommodationName: b.accommodationPick?.name ?? null,
           estimatedAccommodationPax: b.accommodationPick?.pax ?? null,
-          estimatedGroupSize: null,
+          estimatedGroupSize: derivedGroupSize,
           estimatedPerPersonPesos: b.estimatedTotalPerPersonPesos ?? null,
+          estimatedCostMinPesos: b.estimatedCostMin,
+          estimatedCostMaxPesos: b.estimatedCostMax,
         })),
       );
       setNoMatchNote(null);
@@ -722,8 +746,10 @@ export function ItineraryScreen({ navigation }: any) {
     categorySlug,
     resortPeriod,
     derivedBudget,
+    derivedGroupSize,
     budgetValue,
     budgetInput,
+    groupSizeInput,
     foodVisitTime,
     prio1,
     prio2,
@@ -783,19 +809,12 @@ export function ItineraryScreen({ navigation }: any) {
 
       <View style={{ marginTop: 8 }}>
         {stops.map((s, idx) => {
-          const rankEmojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
-          const rankColors = ["#F59E0B", "#94A3B8", "#D97706", "#6B7280", "#6B7280"];
           return (
             <Pressable
               key={s.id}
               style={({ pressed }) => [styles.resultCard, pressed && { opacity: 0.95 }]}
               onPress={() => navigation?.navigate?.("Detail", { id: s.id })}
             >
-              {/* Rank badge */}
-              <View style={[styles.rankBadge, { borderColor: rankColors[idx] + "55" }]}>
-                <Text style={styles.rankEmoji}>{rankEmojis[idx] ?? `#${idx + 1}`}</Text>
-              </View>
-
               {/* Thumbnail */}
               {s.photoUrl ? (
                 <Image source={{ uri: s.photoUrl }} style={styles.resultThumb} />
@@ -859,16 +878,16 @@ export function ItineraryScreen({ navigation }: any) {
                   })}
                 </View>
 
-                {typeof s.estimatedEntrancePesos === "number" && (
-                  <Text style={styles.resultLine}>
-                    Entrance: <Text style={styles.resultLineStrong}>{peso(s.estimatedEntrancePesos)}</Text>
-                  </Text>
-                )}
-                {typeof s.estimatedTotalPesos === "number" && (
-                  <Text style={styles.resultTotal}>
-                    Total: <Text style={styles.resultTotalStrong}>{peso(s.estimatedTotalPesos)}</Text>
-                  </Text>
-                )}
+                <View style={styles.resultHintRow}>
+                  <View style={{ flex: 1 }} />
+                  <Pressable
+                    onPress={() => setDetailsStopId(s.id)}
+                    style={({ pressed }) => [styles.viewDetailsBtn, pressed && { opacity: 0.9 }]}
+                  >
+                    <Text style={styles.viewDetailsBtnTxt}>View details</Text>
+                    <Ionicons name="information-circle-outline" size={16} color={colors.primaryTealDeep} />
+                  </Pressable>
+                </View>
               </View>
 
             <Ionicons name="chevron-forward" size={18} color="rgba(4,120,126,0.55)" />
@@ -909,6 +928,92 @@ export function ItineraryScreen({ navigation }: any) {
             </Text>
           ))}
       </View>
+
+      <Modal
+        visible={Boolean(detailsStop)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDetailsStopId(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setDetailsStopId(null)} />
+        <View style={[styles.modalWrap, { pointerEvents: "box-none" as any }]}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>Estimated cost</Text>
+              <Pressable onPress={() => setDetailsStopId(null)} hitSlop={10} accessibilityLabel="Close details">
+                <Ionicons name="close" size={22} color={colors.navy} />
+              </Pressable>
+            </View>
+            {detailsStop ? (
+              <View style={styles.modalBody}>
+                <Text style={styles.modalPlace} numberOfLines={2}>{detailsStop.name}</Text>
+                {detailsStop.estimatedGroupSize ? (
+                  <Text style={styles.modalMeta}>Group size: {detailsStop.estimatedGroupSize}</Text>
+                ) : (
+                  <Text style={styles.modalMeta}>Group size: —</Text>
+                )}
+
+                {typeof detailsStop.estimatedEntrancePesos === "number" ? (
+                  <View style={styles.costRow}>
+                    <Text style={styles.costK}>Entrance (per person)</Text>
+                    <Text style={styles.costV}>{peso(detailsStop.estimatedEntrancePesos)}</Text>
+                  </View>
+                ) : null}
+
+                {typeof detailsStop.estimatedEntrancePesos === "number" && detailsStop.estimatedGroupSize ? (
+                  <View style={styles.costRow}>
+                    <Text style={styles.costK}>
+                      Entrance total ({detailsStop.estimatedEntrancePesos} × {detailsStop.estimatedGroupSize})
+                    </Text>
+                    <Text style={styles.costV}>
+                      {peso(detailsStop.estimatedEntrancePesos * detailsStop.estimatedGroupSize)}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {detailsStop.estimatedAccommodationPesos != null ? (
+                  <View style={styles.costRow}>
+                    <Text style={styles.costK}>
+                      Accommodation{detailsStop.estimatedAccommodationPax ? ` (${detailsStop.estimatedAccommodationPax})` : ""}
+                    </Text>
+                    <Text style={styles.costV}>{peso(detailsStop.estimatedAccommodationPesos)}</Text>
+                  </View>
+                ) : null}
+
+                {typeof detailsStop.estimatedCostMinPesos === "number" &&
+                typeof detailsStop.estimatedCostMaxPesos === "number" ? (
+                  <>
+                    <View style={styles.costRow}>
+                      <Text style={styles.costK}>Estimated cost (per person)</Text>
+                      <Text style={styles.costV}>
+                        {peso(detailsStop.estimatedCostMinPesos)}–{peso(detailsStop.estimatedCostMaxPesos)}
+                      </Text>
+                    </View>
+                    {detailsStop.estimatedGroupSize ? (
+                      <View style={styles.costRow}>
+                        <Text style={styles.costK}>
+                          Estimated total ({detailsStop.estimatedGroupSize} persons)
+                        </Text>
+                        <Text style={styles.costV}>
+                          {peso(detailsStop.estimatedCostMinPesos * detailsStop.estimatedGroupSize)}–
+                          {peso(detailsStop.estimatedCostMaxPesos * detailsStop.estimatedGroupSize)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </>
+                ) : null}
+
+                {typeof detailsStop.estimatedTotalPesos === "number" ? (
+                  <View style={[styles.costRow, styles.costRowTotal]}>
+                    <Text style={styles.costKTotal}>Total</Text>
+                    <Text style={styles.costVTotal}>{peso(detailsStop.estimatedTotalPesos)}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 
@@ -932,7 +1037,6 @@ export function ItineraryScreen({ navigation }: any) {
           </LinearGradient>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.topCardTitle}>Generate Itinerary</Text>
-            <Text style={styles.topCardSub}>Using current location (Modified A*).</Text>
           </View>
         </View>
         <Pressable style={({ pressed }) => [styles.locationPill, pressed && { opacity: 0.88 }]}>
@@ -959,6 +1063,12 @@ export function ItineraryScreen({ navigation }: any) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.muniRow}
       >
+        <MuniChip
+          key="all"
+          name="All"
+          active={municipalityId === ""}
+          onPress={() => setMunicipalityId("")}
+        />
         {municipalities.slice(0, 12).map((m) => (
           <MuniChip
             key={m.id}
@@ -1136,6 +1246,23 @@ export function ItineraryScreen({ navigation }: any) {
           style={styles.budgetInput}
         />
         <Text style={styles.budgetHint}>e.g. 250</Text>
+      </View>
+
+      {/* Group size */}
+      <SectionRow left="GROUP SIZE" />
+      <View style={styles.budgetInputRow}>
+        <View style={styles.budgetInputIcon}>
+          <Ionicons name="people-outline" size={17} color="#9CA3AF" />
+        </View>
+        <TextInput
+          value={groupSizeInput}
+          onChangeText={(t) => setGroupSizeInput(t.replace(/[^\d]/g, "").slice(0, 3))}
+          placeholder="Enter group size"
+          placeholderTextColor="rgba(100,116,139,0.5)"
+          keyboardType="numeric"
+          style={styles.budgetInput}
+        />
+        <Text style={styles.budgetHint}>e.g. 6</Text>
       </View>
 
       {/* Priorities */}
@@ -1361,7 +1488,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(4,120,126,0.35)",
     backgroundColor: "rgba(4,120,126,0.06)",
     transform: [{ translateY: -1 }],
-    ...shadowCompat({ opacity: 0.08, radius: 10, offsetY: 4, elevation: 4 }),
   },
   muniIconBg: {
     width: 30,
@@ -1505,7 +1631,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   budgetChipActive: {
-    borderColor: "rgba(124,58,237,0.40)",
+    borderColor: "rgba(22,163,74,0.55)",
     transform: [{ translateY: -2 }],
     ...shadowCompat({ opacity: 0.10, radius: 10, offsetY: 4, elevation: 4 }),
   },
@@ -1514,7 +1640,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#94A3B8",
   },
-  budgetChipTxtActive: { color: "#1E1B4B", fontWeight: "800" },
+  budgetChipTxtActive: { color: "#FFFFFF", fontWeight: "900" },
 
   budgetInputRow: {
     marginTop: 10,
@@ -1692,17 +1818,6 @@ const styles = StyleSheet.create({
     ...shadowCompat({ opacity: 0.07, radius: 14, offsetY: 6, elevation: 4 }),
     position: "relative",
   },
-  rankBadge: {
-    position: "absolute",
-    top: 8,
-    right: 42,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    backgroundColor: "#FFFBEB",
-  },
-  rankEmoji: { fontSize: 13 },
   resultThumb: {
     width: 56,
     height: 56,
@@ -1737,5 +1852,64 @@ const styles = StyleSheet.create({
   resultLineStrong: { fontWeight: "700", color: "#1E1B4B" },
   resultTotal: { marginTop: 5, fontSize: 12.5, fontWeight: "700", color: "#1E1B4B" },
   resultTotalStrong: { fontWeight: "800", color: colors.primaryTealDeep },
+  resultHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 8,
+  },
+  resultHintRowText: { flex: 1, minWidth: 0 },
+  resultCostHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#94A3B8",
+    fontStyle: "italic",
+  },
+  viewDetailsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 0,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(4,120,126,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(4,120,126,0.20)",
+  },
+  viewDetailsBtnTxt: { fontSize: 13, fontWeight: "800", color: colors.primaryTealDeep },
   empty: { color: "#94A3B8", marginTop: 16, fontSize: 14, lineHeight: 20, textAlign: "center" },
+
+  // Details modal
+  modalOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(15, 23, 42, 0.62)" },
+  modalWrap: { flex: 1, justifyContent: "flex-end", padding: 14 },
+  modalCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(196,181,253,0.28)",
+    overflow: "hidden",
+    ...shadowCompat({ opacity: 0.12, radius: 20, offsetY: 10, elevation: 10 }),
+  },
+  modalHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(148,163,184,0.18)",
+    backgroundColor: "rgba(240,253,250,0.7)",
+  },
+  modalTitle: { fontSize: 15.5, fontWeight: "900", color: colors.navy },
+  modalBody: { padding: 14, gap: 10 },
+  modalPlace: { fontSize: 14.5, fontWeight: "800", color: colors.navy },
+  modalMeta: { fontSize: 12.5, fontWeight: "700", color: colors.muted },
+  costRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
+  costK: { flex: 1, fontSize: 13, fontWeight: "700", color: colors.muted2 },
+  costV: { fontSize: 13, fontWeight: "900", color: colors.navy },
+  costRowTotal: { marginTop: 6, paddingTop: 10, borderTopWidth: 1, borderTopColor: "rgba(148,163,184,0.18)" },
+  costKTotal: { flex: 1, fontSize: 14, fontWeight: "900", color: colors.navy },
+  costVTotal: { fontSize: 14.5, fontWeight: "900", color: colors.primaryTealDeep },
 });

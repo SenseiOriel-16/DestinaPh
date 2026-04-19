@@ -394,7 +394,7 @@ export function BookingsScreen({ navigation, route }: Props) {
   }, [load]);
 
   return (
-    <View style={[styles.page, { paddingTop: Math.max(insets.top, 10) }]}>
+      <View style={[styles.page, { paddingTop: Math.max(insets.top, 10) }]}>
       <Modal
         visible={detailOpen}
         transparent
@@ -555,11 +555,12 @@ export function BookingsScreen({ navigation, route }: Props) {
             <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
               <View style={styles.headerTop}>
                 <TabInlineBackButton />
+                <Text style={styles.headerTopTitle} numberOfLines={1}>
+                  My Bookings
+                </Text>
+                <View style={styles.headerTopSpacer} />
               </View>
-              <View style={styles.headerText}>
-                <Text style={styles.headerTitle}>My Bookings</Text>
-                <Text style={styles.headerSub}>View and manage your confirmed bookings.</Text>
-              </View>
+              <Text style={styles.headerSub}>View and manage your confirmed bookings.</Text>
             </View>
 
             <View style={styles.sheet}>
@@ -762,19 +763,20 @@ const styles = StyleSheet.create({
   headerTop: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-start",
+    justifyContent: "space-between",
   },
-  headerText: {
-    marginTop: 10,
-  },
-  headerTitle: {
+  headerTopTitle: {
+    flex: 1,
+    textAlign: "left",
     fontSize: 26,
     fontWeight: "900",
     color: colors.navy,
     letterSpacing: -0.2,
+    marginLeft: 4,
   },
+  headerTopSpacer: { width: 28 },
   headerSub: {
-    marginTop: 6,
+    marginTop: 8,
     fontSize: 13,
     fontWeight: "600",
     color: colors.muted,

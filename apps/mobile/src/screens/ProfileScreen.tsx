@@ -75,11 +75,16 @@ export function ProfileScreen({ navigation }: Props) {
     setUserId(uid);
     const meta = session.session?.user.user_metadata as { full_name?: string; avatar_url?: string } | undefined;
     if (uid) {
-      const { data: row } = await supabase
+      const { data: row, error } = await supabase
         .from("profiles")
         .select("full_name, avatar_url, username")
         .eq("id", uid)
         .maybeSingle();
+      if (error) {
+        // Common when DB RLS policy is misconfigured (e.g. Postgres 42P17 infinite recursion).
+        console.warn("[DestinaPH] profile refresh:", error.message);
+        setMessage(error.message);
+      }
       const uname = row?.username?.trim() || null;
       setProfileUsername(uname);
       setDisplayName(row?.full_name?.trim() || meta?.full_name || mail?.split("@")[0] || "Traveler");
@@ -261,12 +266,6 @@ export function ProfileScreen({ navigation }: Props) {
       label: "My Bookings",
       icon: "calendar-outline",
       onPress: () => navigation.navigate("Bookings"),
-    },
-    {
-      key: "messages",
-      label: "Messages",
-      icon: "chatbubble-ellipses-outline",
-      onPress: () => rootNav(navigation)?.navigate("MessagesInbox" as any),
     },
     {
       key: "fav",

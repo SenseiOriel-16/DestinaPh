@@ -36,9 +36,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MapPinPreview } from "../components/MapPinPreview";
 import { openGoogleMapsDirections, openTurnByTurnNavigation } from "../lib/mapExternal";
 import { recordVisitIntentAndStartConfirmation } from "../lib/visitConfirmation";
-import { CHAT_OPEN_EVENT } from "../components/ChatOverlay";
-import { DeviceEventEmitter } from "react-native";
-
 type Props = CompositeScreenProps<
   NativeStackScreenProps<HomeStackParamList, "Detail">,
   CompositeScreenProps<BottomTabScreenProps<TabParamList>, NativeStackScreenProps<RootStackParamList>>
@@ -565,13 +562,6 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
               <Ionicons name="chevron-back" size={24} color={colors.navy} />
             </Pressable>
             <View style={{ flexDirection: "row", gap: 10 }}>
-              <Pressable
-                style={styles.heroIconBtn}
-                onPress={() => DeviceEventEmitter.emit(CHAT_OPEN_EVENT, { businessId: id })}
-                accessibilityLabel="Message business"
-              >
-                <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.navy} />
-              </Pressable>
               <Pressable
                 style={styles.heroIconBtn}
                 onPress={() => void toggleFavorite()}

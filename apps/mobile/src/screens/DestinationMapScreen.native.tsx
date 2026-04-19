@@ -2,16 +2,11 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import type { RootStackParamList } from "../../App";
-import {
-  fetchOsrmRoute,
-  formatDistanceKm,
-  formatDuration,
-  type LatLng,
-} from "../lib/destinationMapUtils";
+import { formatDistanceKm, formatDuration, type LatLng } from "../lib/destinationMapUtils";
 import { openGoogleMapsDirections } from "../lib/mapExternal";
 import { recordVisitIntentAndStartConfirmation } from "../lib/visitConfirmation";
 import { colors } from "../theme/colors";
@@ -20,22 +15,31 @@ import { GlassPanel } from "../ui/GlassPanel";
 
 type Props = NativeStackScreenProps<RootStackParamList, "DestinationMap">;
 
+function haversineMeters(a: LatLng, b: LatLng): number {
+  const R = 6371000;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const la1 = (a.latitude * Math.PI) / 180;
+  const la2 = (b.latitude * Math.PI) / 180;
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  return R * c;
+}
+
 export function DestinationMapScreen({ route, navigation }: Props) {
   const { title, destLat, destLng, businessId, categoryName } = route.params;
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
   const [userLoc, setUserLoc] = useState<LatLng | null>(null);
-  const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
   const [durationSec, setDurationSec] = useState<number | null>(null);
   const [distanceM, setDistanceM] = useState<number | null>(null);
-  /** OSRM request in flight — map and destination stay visible while this runs. */
-  const [routeLoading, setRouteLoading] = useState(false);
   const [permDenied, setPermDenied] = useState(false);
 
   const destination = useMemo(() => ({ latitude: destLat, longitude: destLng }), [destLat, destLng]);
 
   const load = useCallback(async () => {
-    setRouteCoords([]);
     setDurationSec(null);
     setDistanceM(null);
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -64,17 +68,11 @@ export function DestinationMapScreen({ route, navigation }: Props) {
       return;
     }
 
-    setRouteLoading(true);
-    try {
-      const { coords, durationSec: d, distanceM: dist } = await fetchOsrmRoute(from, destination);
-      setRouteCoords(coords);
-      setDurationSec(d);
-      setDistanceM(dist);
-    } catch {
-      /* OSRM failed — map + markers still useful */
-    } finally {
-      setRouteLoading(false);
-    }
+    // No external routing providers. Show straight-line estimate only.
+    const meters = haversineMeters(from, destination);
+    setDistanceM(meters);
+    // Assume ~25 km/h average (town driving) for an ETA-ish estimate.
+    setDurationSec((meters / 1000 / 25) * 3600);
 
     if (usedLastKnown) {
       void (async () => {
@@ -85,12 +83,11 @@ export function DestinationMapScreen({ route, navigation }: Props) {
             longitude: pos.coords.longitude,
           };
           setUserLoc(refined);
-          const next = await fetchOsrmRoute(refined, destination);
-          setRouteCoords(next.coords);
-          setDurationSec(next.durationSec);
-          setDistanceM(next.distanceM);
+          const meters2 = haversineMeters(refined, destination);
+          setDistanceM(meters2);
+          setDurationSec((meters2 / 1000 / 25) * 3600);
         } catch {
-          /* keep first route */
+          /* keep first estimate */
         }
       })();
     }
@@ -116,13 +113,6 @@ export function DestinationMapScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     const id = requestAnimationFrame(() => {
-      if (routeCoords.length > 1) {
-        mapRef.current?.fitToCoordinates(routeCoords, {
-          edgePadding: { top: 100, right: 36, bottom: 220, left: 36 },
-          animated: true,
-        });
-        return;
-      }
       if (userLoc) {
         mapRef.current?.fitToCoordinates([userLoc, destination], {
           edgePadding: { top: 100, right: 36, bottom: 220, left: 36 },
@@ -131,7 +121,7 @@ export function DestinationMapScreen({ route, navigation }: Props) {
       }
     });
     return () => cancelAnimationFrame(id);
-  }, [userLoc, destination, routeCoords]);
+  }, [userLoc, destination]);
 
   const openGoogleDirections = () => {
     if (businessId) {
@@ -162,9 +152,6 @@ export function DestinationMapScreen({ route, navigation }: Props) {
       >
         <Marker coordinate={destination} title={title} pinColor="#c0392b" />
         {userLoc ? <Marker coordinate={userLoc} title="Your location" pinColor={colors.primaryTeal} /> : null}
-        {routeCoords.length > 1 ? (
-          <Polyline coordinates={routeCoords} strokeColor={colors.primaryTeal} strokeWidth={4} />
-        ) : null}
       </MapView>
 
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
@@ -183,12 +170,10 @@ export function DestinationMapScreen({ route, navigation }: Props) {
         </Pressable>
       </View>
 
-      {routeLoading ? (
-        <GlassPanel style={styles.loadingBanner} contentStyle={styles.loadingBannerContent} borderRadius={14} variant="subtle" intensity={54}>
-          <ActivityIndicator color={colors.primaryTeal} />
-          <Text style={styles.loadingText}>Loading route…</Text>
-        </GlassPanel>
-      ) : null}
+      <GlassPanel style={styles.loadingBanner} contentStyle={styles.loadingBannerContent} borderRadius={14} variant="subtle" intensity={54}>
+        <ActivityIndicator color={colors.primaryTeal} />
+        <Text style={styles.loadingText}>Loading map…</Text>
+      </GlassPanel>
 
       {permDenied ? (
         <GlassPanel
@@ -215,18 +200,13 @@ export function DestinationMapScreen({ route, navigation }: Props) {
               {formatDuration(durationSec)} ({formatDistanceKm(distanceM)})
             </Text>
             <Text style={styles.summarySub}>
-              {routeCoords.length > 1
-                ? "via OSRM routing (OpenStreetMap data)."
-                : userLoc
-                  ? "Straight line — route unavailable."
-                  : "Open Google Maps for full navigation."}
+              {userLoc ? "Estimated straight-line distance. Open Google Maps for turn-by-turn." : "Open Google Maps for navigation."}
             </Text>
           </View>
         </View>
         <Pressable style={styles.startNav} onPress={openGoogleDirections}>
           <Text style={styles.startNavText}>Start navigation</Text>
         </Pressable>
-        <Text style={styles.osmNote}>Map data © OpenStreetMap contributors</Text>
       </View>
     </View>
   );
@@ -312,10 +292,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   startNavText: { color: "#fff", fontWeight: "800", fontSize: 16 },
-  osmNote: {
-    marginTop: 10,
-    fontSize: 11,
-    color: colors.muted2,
-    textAlign: "center",
-  },
 });

@@ -137,12 +137,29 @@ export function WelcomeAuthScreen({ navigation, route }: Props) {
     }
     const uid = data.user?.id;
     if (uid) {
-      const { data: profile } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
-      if ((profile as any)?.role !== "consumer") {
+      const metaRole = (data.user?.user_metadata as any)?.role;
+      if (metaRole && metaRole !== "consumer") {
         await supabase.auth.signOut();
         setBusy(false);
         setMessage("This email is not a mobile user account. Please use the correct app for your account type.");
         return;
+      }
+      // Fallback to profiles only if role is missing in metadata.
+      if (!metaRole) {
+        const { data: profile, error: profErr } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", uid)
+          .maybeSingle();
+        if (profErr) {
+          // If profiles is temporarily broken (e.g. RLS recursion), don't block sign-in.
+          console.warn("[DestinaPH] role check skipped:", profErr.message);
+        } else if ((profile as any)?.role && (profile as any)?.role !== "consumer") {
+          await supabase.auth.signOut();
+          setBusy(false);
+          setMessage("This email is not a mobile user account. Please use the correct app for your account type.");
+          return;
+        }
       }
     }
     setBusy(false);

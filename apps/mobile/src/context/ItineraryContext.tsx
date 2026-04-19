@@ -12,8 +12,8 @@ import {
 export type ItineraryStop = {
   id: string;
   name: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   categoryName?: string;
   photoUrl?: string | null;
   // Optional metadata for generated results (to validate priorities).
@@ -28,6 +28,9 @@ export type ItineraryStop = {
   estimatedAccommodationPax?: string | null;
   estimatedGroupSize?: number | null;
   estimatedPerPersonPesos?: number | null;
+  // Food budget ranges (per person)
+  estimatedCostMinPesos?: number | null;
+  estimatedCostMaxPesos?: number | null;
 };
 
 type Ctx = {
