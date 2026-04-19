@@ -2,7 +2,7 @@
   "expo": {
     "extra": {},
     "android": {
-      "package": "com.oscarllabres08.destinaph"
+      "package": "ph.destinaph.app"
     }
   }
 }

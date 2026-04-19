@@ -4,14 +4,17 @@
   "version": "1.0.0",
   "main": "expo/AppEntry",
   "scripts": {
-    "postinstall": "patch-package && node scripts/fix-expo-av-viewutils.cjs",
     "start": "expo start",
     "web": "expo start --web",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "icons:generate": "node scripts/generate-expo-icons.cjs",
     "sync:icon": "node ../../scripts/sync-system-icon.cjs",
-    "prebuild:android": "npm run icons:generate && expo prebuild --platform android --clean --no-install"
+    "prebuild:android": "npm run icons:generate && expo prebuild --platform android --clean --no-install",
+    "eas:apk": "npx eas-cli build --platform android --profile preview",
+    "eas:build:preview": "npx eas-cli build --platform android --profile preview --non-interactive --no-wait",
+    "eas:build:production": "npx eas-cli build --platform android --profile production --non-interactive --no-wait",
+    "eas:submit:android": "npx eas-cli submit --platform android --latest --non-interactive"
   },
   "dependencies": {
     "@babel/runtime": "^7.25.0",
@@ -25,7 +28,7 @@
     "@supabase/supabase-js": "^2.49.1",
     "base64-arraybuffer": "^1.0.2",
     "expo": "^55.0.15",
-    "expo-av": "~14.0.7",
+    "expo-audio": "~55.0.13",
     "expo-blur": "~55.0.14",
     "expo-dev-client": "~55.0.27",
     "expo-file-system": "~55.0.16",
@@ -33,7 +36,6 @@
     "expo-linear-gradient": "~55.0.13",
     "expo-location": "~55.1.8",
     "expo-status-bar": "~55.0.5",
-    "patch-package": "^8.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.4",

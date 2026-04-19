@@ -22,7 +22,7 @@ import type { ExploreStackParamList, TabParamList } from "../navigation/tabTypes
 import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { firstPhotoPublicUrl, formatBusinessAddress } from "../lib/businessDisplay";
 import { ratingParts } from "../lib/businessRatingDisplay";
-import { supabase } from "../lib/supabase";
+import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 import { shadowCompat } from "../lib/rnWebStyleCompat";
 
@@ -69,6 +69,7 @@ export function ExploreScreen({ navigation, route }: Props) {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const searchInputRef = useRef<TextInput>(null);
   const searchAnim = useRef(new Animated.Value(0)).current;
   const searchWidthAnim = useRef(new Animated.Value(0)).current;
@@ -104,6 +105,15 @@ export function ExploreScreen({ navigation, route }: Props) {
   }
 
   const load = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setLoadError(
+        "Supabase is not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in Expo → Environment variables for release builds, or apps/mobile/.env locally.",
+      );
+      setRows([]);
+      setMunicipalities([]);
+      setMunicipality("all");
+      return;
+    }
     const { data, error } = await supabase
       .from("businesses")
       .select(
@@ -112,6 +122,7 @@ export function ExploreScreen({ navigation, route }: Props) {
       .eq("status", "approved")
       .order("sort_order", { ascending: true, foreignTable: "business_photos" });
     if (!error && data) {
+      setLoadError(null);
       const list = data as unknown as Row[];
       const munisList = municipalitiesFromRows(list);
       setRows(list);
@@ -120,6 +131,7 @@ export function ExploreScreen({ navigation, route }: Props) {
         prev !== "all" && !munisList.some((m) => m.id === prev) ? "all" : prev,
       );
     } else {
+      setLoadError(error?.message ?? "Could not load destinations.");
       setRows([]);
       setMunicipalities([]);
       setMunicipality("all");
@@ -308,6 +320,13 @@ export function ExploreScreen({ navigation, route }: Props) {
         </>
       ) : null}
 
+      {loadError ? (
+        <View style={styles.configBanner}>
+          <Ionicons name="warning-outline" size={20} color="#9a3412" />
+          <Text style={styles.configBannerText}>{loadError}</Text>
+        </View>
+      ) : null}
+
       <Text style={styles.listHeading}>Popular Near You</Text>
     </View>
   );
@@ -485,6 +504,26 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.navy,
     fontSize: 12,
+  },
+  configBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#ffedd5",
+    borderWidth: 1,
+    borderColor: "#fdba74",
+  },
+  configBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#9a3412",
+    fontWeight: "600",
   },
   listHeading: {
     fontSize: 17,

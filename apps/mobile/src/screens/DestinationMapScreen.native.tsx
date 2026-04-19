@@ -28,13 +28,13 @@ export function DestinationMapScreen({ route, navigation }: Props) {
   const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
   const [durationSec, setDurationSec] = useState<number | null>(null);
   const [distanceM, setDistanceM] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  /** OSRM request in flight — map and destination stay visible while this runs. */
+  const [routeLoading, setRouteLoading] = useState(false);
   const [permDenied, setPermDenied] = useState(false);
 
   const destination = useMemo(() => ({ latitude: destLat, longitude: destLng }), [destLat, destLng]);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setRouteCoords([]);
     setDurationSec(null);
     setDistanceM(null);
@@ -42,22 +42,57 @@ export function DestinationMapScreen({ route, navigation }: Props) {
     if (status !== "granted") {
       setPermDenied(true);
       setUserLoc(null);
-      setLoading(false);
       return;
     }
     setPermDenied(false);
+    let from: LatLng | null = null;
+    let usedLastKnown = false;
     try {
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const from = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      setUserLoc(from);
+      const last = await Location.getLastKnownPositionAsync({ maxAge: 120_000 });
+      if (last) {
+        usedLastKnown = true;
+        from = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+        setUserLoc(from);
+      }
+      if (!from) {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+        from = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        setUserLoc(from);
+      }
+    } catch {
+      setUserLoc(null);
+      return;
+    }
+
+    setRouteLoading(true);
+    try {
       const { coords, durationSec: d, distanceM: dist } = await fetchOsrmRoute(from, destination);
       setRouteCoords(coords);
       setDurationSec(d);
       setDistanceM(dist);
     } catch {
-      setUserLoc(null);
+      /* OSRM failed — map + markers still useful */
     } finally {
-      setLoading(false);
+      setRouteLoading(false);
+    }
+
+    if (usedLastKnown) {
+      void (async () => {
+        try {
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+          const refined: LatLng = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          };
+          setUserLoc(refined);
+          const next = await fetchOsrmRoute(refined, destination);
+          setRouteCoords(next.coords);
+          setDurationSec(next.durationSec);
+          setDistanceM(next.distanceM);
+        } catch {
+          /* keep first route */
+        }
+      })();
     }
   }, [destination]);
 
@@ -75,8 +110,11 @@ export function DestinationMapScreen({ route, navigation }: Props) {
     [destination.latitude, destination.longitude],
   );
 
+  const onMapReady = useCallback(() => {
+    mapRef.current?.animateToRegion(initialRegion, 0);
+  }, [initialRegion]);
+
   useEffect(() => {
-    if (loading) return;
     const id = requestAnimationFrame(() => {
       if (routeCoords.length > 1) {
         mapRef.current?.fitToCoordinates(routeCoords, {
@@ -90,12 +128,10 @@ export function DestinationMapScreen({ route, navigation }: Props) {
           edgePadding: { top: 100, right: 36, bottom: 220, left: 36 },
           animated: true,
         });
-        return;
       }
-      mapRef.current?.animateToRegion(initialRegion, 350);
     });
     return () => cancelAnimationFrame(id);
-  }, [loading, userLoc, destination, routeCoords, initialRegion]);
+  }, [userLoc, destination, routeCoords]);
 
   const openGoogleDirections = () => {
     if (businessId) {
@@ -119,6 +155,8 @@ export function DestinationMapScreen({ route, navigation }: Props) {
         style={StyleSheet.absoluteFill}
         provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
         initialRegion={initialRegion}
+        onMapReady={onMapReady}
+        loadingEnabled={false}
         showsUserLocation={Boolean(userLoc)}
         showsMyLocationButton={false}
       >
@@ -145,7 +183,7 @@ export function DestinationMapScreen({ route, navigation }: Props) {
         </Pressable>
       </View>
 
-      {loading ? (
+      {routeLoading ? (
         <GlassPanel style={styles.loadingBanner} contentStyle={styles.loadingBannerContent} borderRadius={14} variant="subtle" intensity={54}>
           <ActivityIndicator color={colors.primaryTeal} />
           <Text style={styles.loadingText}>Loading route…</Text>

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "DestinaPH",
-    "slug": "destinaph-llabresoscar08-dev",
+    "slug": "destinaph",
     "version": "1.0.0",
     "platforms": [
       "ios",
@@ -19,6 +19,7 @@
       "**/*"
     ],
     "plugins": [
+      "expo-audio",
       [
         "expo-location",
         {
@@ -55,14 +56,17 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "extra": {
       "eas": {
-        "projectId": "b645d92c-07e2-4483-a3ae-03ad2f5f21c9"
+        "projectId": "34e4180f-72c8-4153-a156-ea21185f9cff"
       }
     },
-    "owner": "llabresoscar08"
+    "owner": "senseio"
   }
 }
