@@ -192,63 +192,60 @@ export function ExploreScreen({ navigation, route }: Props) {
       </View>
 
       <View style={styles.searchRow}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={searchOpen ? "Close search" : "Search"}
-          style={styles.searchHit}
-          onPress={() => {
-            const next = !searchOpen;
-            setSearchOpen(next);
-            if (next) {
-              Animated.parallel([
-                Animated.spring(searchAnim, { toValue: 1, useNativeDriver: true, friction: 9, tension: 90 }),
-                Animated.timing(searchWidthAnim, { toValue: 1, duration: 220, useNativeDriver: false }),
-              ]).start(() => searchInputRef.current?.focus());
-            } else {
-              searchInputRef.current?.blur();
-              Animated.parallel([
-                Animated.timing(searchAnim, { toValue: 0, duration: 160, useNativeDriver: true }),
-                Animated.timing(searchWidthAnim, { toValue: 0, duration: 180, useNativeDriver: false }),
-              ]).start();
-            }
-          }}
+        <Animated.View
+          style={[
+            styles.searchMorph,
+            {
+              width: searchWidthAnim.interpolate({ inputRange: [0, 1], outputRange: [48, searchMaxWidth] }),
+              opacity: 1,
+            },
+          ]}
         >
-          <Animated.View
-            style={[
-              styles.searchMorph,
-              {
-                width: searchWidthAnim.interpolate({ inputRange: [0, 1], outputRange: [48, searchMaxWidth] }),
-                opacity: 1,
-                transform: [
-                  { scale: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1] }) },
-                ],
-              },
-            ]}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={searchOpen ? "Close search" : "Search"}
+            onPress={() => {
+              const next = !searchOpen;
+              setSearchOpen(next);
+              if (next) {
+                Animated.parallel([
+                  Animated.spring(searchAnim, { toValue: 1, useNativeDriver: true, friction: 9, tension: 90 }),
+                  Animated.timing(searchWidthAnim, { toValue: 1, duration: 220, useNativeDriver: false }),
+                ]).start(() => searchInputRef.current?.focus());
+              } else {
+                searchInputRef.current?.blur();
+                Animated.parallel([
+                  Animated.timing(searchAnim, { toValue: 0, duration: 160, useNativeDriver: true }),
+                  Animated.timing(searchWidthAnim, { toValue: 0, duration: 180, useNativeDriver: false }),
+                ]).start();
+              }
+            }}
+            style={styles.searchIconHit}
+            hitSlop={10}
           >
             <Ionicons name="search-outline" size={20} color={colors.muted} />
-            <Animated.View
-              style={{
-                flex: 1,
-                marginLeft: 10,
-                opacity: searchAnim,
-                transform: [
-                  { translateX: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) },
-                ],
-              }}
-              pointerEvents={searchOpen ? "auto" : "none"}
-            >
-              <TextInput
-                ref={searchInputRef}
-                placeholder="Maghanap ng mga destinasyon…"
-                placeholderTextColor={colors.muted}
-                value={search}
-                onChangeText={setSearch}
-                style={styles.searchInput}
-                returnKeyType="search"
-              />
-            </Animated.View>
+          </Pressable>
+
+          <Animated.View
+            style={{
+              flex: 1,
+              marginLeft: 10,
+              opacity: searchAnim,
+              transform: [{ translateX: searchAnim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) }],
+            }}
+            pointerEvents={searchOpen ? "auto" : "none"}
+          >
+            <TextInput
+              ref={searchInputRef}
+              placeholder="Search for a destination..."
+              placeholderTextColor={colors.muted}
+              value={search}
+              onChangeText={setSearch}
+              style={styles.searchInput}
+              returnKeyType="search"
+            />
           </Animated.View>
-        </Pressable>
+        </Animated.View>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Filters"
@@ -474,6 +471,12 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     backgroundColor: colors.primaryTeal,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchIconHit: {
+    width: 24,
+    height: 24,
     alignItems: "center",
     justifyContent: "center",
   },

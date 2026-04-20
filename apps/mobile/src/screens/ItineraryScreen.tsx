@@ -883,6 +883,8 @@ export function ItineraryScreen({ navigation }: any) {
                   <Pressable
                     onPress={() => setDetailsStopId(s.id)}
                     style={({ pressed }) => [styles.viewDetailsBtn, pressed && { opacity: 0.9 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="View details"
                   >
                     <Text style={styles.viewDetailsBtnTxt}>View details</Text>
                     <Ionicons name="information-circle-outline" size={16} color={colors.primaryTealDeep} />
@@ -890,7 +892,7 @@ export function ItineraryScreen({ navigation }: any) {
                 </View>
               </View>
 
-            <Ionicons name="chevron-forward" size={18} color="rgba(4,120,126,0.55)" />
+              <Ionicons name="chevron-forward" size={18} color="rgba(4,120,126,0.55)" />
             </Pressable>
           );
         })}
@@ -1878,6 +1880,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(4,120,126,0.20)",
   },
+  // (removed) resultCardMainHit/resultCardActions — reverted to original card layout
   viewDetailsBtnTxt: { fontSize: 13, fontWeight: "800", color: colors.primaryTealDeep },
   empty: { color: "#94A3B8", marginTop: 16, fontSize: 14, lineHeight: 20, textAlign: "center" },
 

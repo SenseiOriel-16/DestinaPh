@@ -8,3 +8,7 @@ dist
 *.log
 web-build
 apps/*/dist
+
+# Expo prebuild outputs (keep managed workflow)
+apps/mobile/android/
+apps/mobile/ios/

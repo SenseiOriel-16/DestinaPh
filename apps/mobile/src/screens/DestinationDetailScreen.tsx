@@ -891,10 +891,9 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
                 latitude={lat!}
                 longitude={lng!}
                 title={title}
-                onPressExpand={openInAppMap}
               />
               <Text style={styles.mapHint}>
-                Satellite-style map in-app (no extra API keys). Tap expand for full map and driving route from you.
+                Map preview only (not clickable). Use “Navigate” or “Google Maps” above.
               </Text>
             </>
           ) : (

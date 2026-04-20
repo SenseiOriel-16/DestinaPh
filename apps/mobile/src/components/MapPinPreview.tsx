@@ -8,7 +8,7 @@ type Props = {
   latitude: number;
   longitude: number;
   title: string;
-  onPressExpand: () => void;
+  onPressExpand?: () => void;
 };
 
 /** In-app satellite-style preview (Esri tiles + Leaflet). Expand opens full route map. */
@@ -25,15 +25,18 @@ export function MapPinPreview({ latitude, longitude, title, onPressExpand }: Pro
         javaScriptEnabled
         domStorageEnabled={false}
         setSupportMultipleWindows={false}
+        pointerEvents="none"
       />
-      <Pressable
-        style={styles.mapExpand}
-        onPress={onPressExpand}
-        accessibilityRole="button"
-        accessibilityLabel="Open full map with route"
-      >
-        <Ionicons name="expand-outline" size={20} color={colors.navy} />
-      </Pressable>
+      {onPressExpand ? (
+        <Pressable
+          style={styles.mapExpand}
+          onPress={onPressExpand}
+          accessibilityRole="button"
+          accessibilityLabel="Open full map with route"
+        >
+          <Ionicons name="expand-outline" size={20} color={colors.navy} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }

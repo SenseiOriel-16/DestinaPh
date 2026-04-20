@@ -36,6 +36,8 @@ export function DestinationMapScreen({ route, navigation }: Props) {
   const [durationSec, setDurationSec] = useState<number | null>(null);
   const [distanceM, setDistanceM] = useState<number | null>(null);
   const [permDenied, setPermDenied] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapTimedOut, setMapTimedOut] = useState(false);
 
   const destination = useMemo(() => ({ latitude: destLat, longitude: destLng }), [destLat, destLng]);
 
@@ -108,8 +110,17 @@ export function DestinationMapScreen({ route, navigation }: Props) {
   );
 
   const onMapReady = useCallback(() => {
+    setMapReady(true);
+    setMapTimedOut(false);
     mapRef.current?.animateToRegion(initialRegion, 0);
   }, [initialRegion]);
+
+  useEffect(() => {
+    setMapReady(false);
+    setMapTimedOut(false);
+    const t = setTimeout(() => setMapTimedOut(true), 8000);
+    return () => clearTimeout(t);
+  }, [destLat, destLng]);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => {
@@ -140,19 +151,27 @@ export function DestinationMapScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <MapView
-        ref={mapRef}
-        style={StyleSheet.absoluteFill}
-        provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
-        initialRegion={initialRegion}
-        onMapReady={onMapReady}
-        loadingEnabled={false}
-        showsUserLocation={Boolean(userLoc)}
-        showsMyLocationButton={false}
-      >
-        <Marker coordinate={destination} title={title} pinColor="#c0392b" />
-        {userLoc ? <Marker coordinate={userLoc} title="Your location" pinColor={colors.primaryTeal} /> : null}
-      </MapView>
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <MapView
+          ref={mapRef}
+          style={StyleSheet.absoluteFill}
+          provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
+          initialRegion={initialRegion}
+          onMapReady={onMapReady}
+          loadingEnabled={false}
+          showsUserLocation={Boolean(userLoc)}
+          showsMyLocationButton={false}
+          mapType="standard"
+          scrollEnabled={false}
+          zoomEnabled={false}
+          rotateEnabled={false}
+          pitchEnabled={false}
+          toolbarEnabled={false}
+        >
+          <Marker coordinate={destination} title={title} pinColor="#c0392b" />
+          {userLoc ? <Marker coordinate={userLoc} title="Your location" pinColor={colors.primaryTeal} /> : null}
+        </MapView>
+      </View>
 
       <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
         <Pressable style={styles.iconCircleOuter} onPress={() => navigation.goBack()} hitSlop={12}>
@@ -170,10 +189,18 @@ export function DestinationMapScreen({ route, navigation }: Props) {
         </Pressable>
       </View>
 
-      <GlassPanel style={styles.loadingBanner} contentStyle={styles.loadingBannerContent} borderRadius={14} variant="subtle" intensity={54}>
-        <ActivityIndicator color={colors.primaryTeal} />
-        <Text style={styles.loadingText}>Loading map…</Text>
-      </GlassPanel>
+      {!mapReady && !mapTimedOut ? (
+        <GlassPanel style={styles.loadingBanner} contentStyle={styles.loadingBannerContent} borderRadius={14} variant="subtle" intensity={54}>
+          <ActivityIndicator color={colors.primaryTeal} />
+          <Text style={styles.loadingText}>Loading map…</Text>
+        </GlassPanel>
+      ) : null}
+
+      {!mapReady && mapTimedOut ? (
+        <GlassPanel style={styles.loadingBanner} contentStyle={styles.loadingBannerContent} borderRadius={14} variant="subtle" intensity={54}>
+          <Text style={styles.loadingText}>Map couldn’t load in-app. Tap “Start navigation”.</Text>
+        </GlassPanel>
+      ) : null}
 
       {permDenied ? (
         <GlassPanel

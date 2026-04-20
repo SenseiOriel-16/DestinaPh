@@ -1,6 +1,5 @@
 import { NavLink, useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useState } from "react";
-import { OwnerMessageBell } from "../components/OwnerMessageBell";
 import { OwnerNotificationBell } from "../components/OwnerNotificationBell";
 import { supabase } from "../lib/supabaseClient";
 import { primeNotificationAudioFromUserGesture } from "../lib/notificationSound";
@@ -221,13 +220,6 @@ export function OwnerLayout() {
                     <span className="owner-nav__switch-knob" />
                   </button>
                 </div>
-                <NavLink
-                  to="/support"
-                  className={({ isActive }) => (isActive ? "active" : "")}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  Contact support
-                </NavLink>
               </div>
             )}
           </div>
@@ -262,7 +254,6 @@ export function OwnerLayout() {
             </div>
           </div>
           <div className="owner-topbar__right">
-            <OwnerMessageBell />
             <OwnerNotificationBell />
             <div className="owner-topbar__avatar" aria-hidden>
               {avatarLetter}
