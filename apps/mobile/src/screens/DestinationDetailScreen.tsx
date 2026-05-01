@@ -50,6 +50,7 @@ type BusinessRow = {
   latitude: number | null;
   longitude: number | null;
   closed_now?: boolean | null;
+  fully_booked?: boolean | null;
   advisory_text?: string | null;
   operating_variations_text?: string | null;
   tags: string[] | null;
@@ -154,6 +155,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const [advisoryText, setAdvisoryText] = useState<string | null>(null);
   const [operatingVariations, setOperatingVariations] = useState<string | null>(null);
   const [closedNow, setClosedNow] = useState(false);
+  const [fullyBooked, setFullyBooked] = useState(false);
   const [statusExpanded, setStatusExpanded] = useState(false);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [allowRes, setAllowRes] = useState(true);
@@ -207,6 +209,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           latitude,
           longitude,
           closed_now,
+          fully_booked,
           owner_id,
           rating_average,
           rating_count,
@@ -251,6 +254,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           allow_reservations?: boolean | null;
         };
           setClosedNow(row.closed_now === true);
+          setFullyBooked(row.fully_booked === true);
         setOwnerId(typeof row.owner_id === "string" ? row.owner_id : null);
         setAllowRes(row.allow_reservations !== false);
         const ra = row.rating_average;
@@ -299,6 +303,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         setAdvisoryText(null);
         setOperatingVariations(null);
           setClosedNow(false);
+          setFullyBooked(false);
         setOwnerId(null);
         setRatingAvg(null);
         setRatingCount(0);
@@ -752,6 +757,10 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
                           <View style={styles.statusChipClosed}>
                             <Text style={styles.statusChipClosedText}>Closed now</Text>
                           </View>
+                        ) : fullyBooked ? (
+                          <View style={styles.statusChipBooked}>
+                            <Text style={styles.statusChipBookedText}>Fully booked</Text>
+                          </View>
                         ) : (
                           <View style={styles.statusChipOpen}>
                             <Text style={styles.statusChipOpenText}>Open</Text>
@@ -975,28 +984,32 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
             </Text>
           )}
 
-          <Pressable
+          {(() => {
+            const canReserve = allowRes && !fullyBooked;
+            const reserveLabel = !allowRes ? "Reservations disabled" : fullyBooked ? "Fully booked" : "Reserve now";
+            return (
+              <Pressable
             accessibilityRole="button"
-            accessibilityLabel={allowRes ? "Reserve now" : "Reservations disabled"}
-            disabled={!allowRes}
+            accessibilityLabel={reserveLabel}
+            disabled={!canReserve}
             hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
             style={({ pressed }) => [
               styles.reserveCtaWrap,
-              !allowRes && { opacity: 0.55 },
+              !canReserve && { opacity: 0.55 },
               pressed && { opacity: 0.9 },
             ]}
             onPress={() => {
-              if (!allowRes) return;
+              if (!canReserve) return;
               trackListingIntentVisit(id);
               navigation.navigate("BookingRequest", { businessId: id });
             }}
           >
             <Animated.View style={[styles.reserveCta, { transform: [{ scale: reserveCtaPulse }] }]}>
-              <Text style={styles.reserveCtaText}>
-                {allowRes ? "Reserve now" : "Reservations disabled"}
-              </Text>
+              <Text style={styles.reserveCtaText}>{reserveLabel}</Text>
             </Animated.View>
-          </Pressable>
+              </Pressable>
+            );
+          })()}
         </View>
     </ScrollView>
     </View>
@@ -1052,6 +1065,16 @@ const styles = StyleSheet.create({
     borderColor: "rgba(244, 67, 54, 0.20)",
   },
   statusChipClosedText: { fontSize: 11, fontWeight: "900", color: colors.danger, letterSpacing: 0.3 },
+  statusChipBooked: {
+    marginLeft: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 152, 0, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 152, 0, 0.22)",
+  },
+  statusChipBookedText: { fontSize: 11, fontWeight: "900", color: colors.navy, letterSpacing: 0.3 },
   statusRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingTop: 10 },
   statusRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "rgba(0,0,0,0.06)", marginTop: 10 },
   statusLabel: { width: 78, fontSize: 12, fontWeight: "800", color: colors.muted2 },

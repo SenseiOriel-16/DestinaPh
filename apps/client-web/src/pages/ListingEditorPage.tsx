@@ -108,6 +108,7 @@ export function ListingEditorPage() {
   const [advisoryText, setAdvisoryText] = useState("");
   const [operatingVariationsText, setOperatingVariationsText] = useState("");
   const [closedNow, setClosedNow] = useState(false);
+  const [fullyBooked, setFullyBooked] = useState(false);
   const [scheduleChoice, setScheduleChoice] = useState<
     | "none"
     | "weekdays_closed"
@@ -350,6 +351,7 @@ export function ListingEditorPage() {
         advisory_text?: string | null;
         operating_variations_text?: string | null;
         closed_now?: boolean | null;
+        fully_booked?: boolean | null;
       };
       setName(String(row.name ?? ""));
       setCategoryId(String(row.category_id ?? ""));
@@ -471,6 +473,7 @@ export function ListingEditorPage() {
         setScheduleDays([]);
       }
       setClosedNow(row.closed_now === true);
+      setFullyBooked(row.fully_booked === true);
 
       const { count: photoCount, error: photoCountErr } = await supabase
         .from("business_photos")
@@ -760,6 +763,7 @@ export function ListingEditorPage() {
       allow_reservations: allowReservations,
       tags: tags.length ? tags : [],
       closed_now: closedNow,
+      fully_booked: fullyBooked,
       operating_hours_always_open: alwaysOpen,
       operating_open_hour: alwaysOpen ? null : openHour,
       operating_open_meridiem: alwaysOpen ? null : openMeridiem,
@@ -1033,6 +1037,14 @@ export function ListingEditorPage() {
                       onChange={(e) => setClosedNow(e.target.checked)}
                     />
                     <span>Close now (show “Closed” badge in app)</span>
+                  </label>
+                  <label className="field-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={fullyBooked}
+                      onChange={(e) => setFullyBooked(e.target.checked)}
+                    />
+                    <span>Fully booked (disable reservations)</span>
                   </label>
                 </div>
                 <p style={{ fontSize: 13, color: "var(--muted)", margin: "4px 0 0" }}>
