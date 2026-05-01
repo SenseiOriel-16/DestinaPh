@@ -49,6 +49,9 @@ type BusinessRow = {
   address_line: string | null;
   latitude: number | null;
   longitude: number | null;
+  closed_now?: boolean | null;
+  advisory_text?: string | null;
+  operating_variations_text?: string | null;
   tags: string[] | null;
   accommodations: unknown;
   entrance_fee_pesos: number | null;
@@ -148,6 +151,10 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const [estimatedCost, setEstimatedCost] = useState<string | null>(null);
   const [bestTimes, setBestTimes] = useState<string[]>([]);
   const [accommodations, setAccommodations] = useState<AccommodationItem[]>([]);
+  const [advisoryText, setAdvisoryText] = useState<string | null>(null);
+  const [operatingVariations, setOperatingVariations] = useState<string | null>(null);
+  const [closedNow, setClosedNow] = useState(false);
+  const [statusExpanded, setStatusExpanded] = useState(false);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [allowRes, setAllowRes] = useState(true);
   const [ratingAvg, setRatingAvg] = useState<number | null>(null);
@@ -199,6 +206,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           address_line,
           latitude,
           longitude,
+          closed_now,
           owner_id,
           rating_average,
           rating_count,
@@ -214,6 +222,8 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           operating_open_meridiem,
           operating_close_hour,
           operating_close_meridiem,
+          advisory_text,
+          operating_variations_text,
           pricing_text,
           estimated_cost_min_pesos,
           estimated_cost_max_pesos,
@@ -240,6 +250,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           rating_count?: number | null;
           allow_reservations?: boolean | null;
         };
+          setClosedNow(row.closed_now === true);
         setOwnerId(typeof row.owner_id === "string" ? row.owner_id : null);
         setAllowRes(row.allow_reservations !== false);
         const ra = row.rating_average;
@@ -274,6 +285,10 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         const bt = (row as any).best_visit_times;
         setBestTimes(Array.isArray(bt) ? bt.filter((x) => typeof x === "string") : []);
         setAccommodations(normalizeAccommodations(row.accommodations));
+        setAdvisoryText(typeof (row as any).advisory_text === "string" ? String((row as any).advisory_text) : null);
+        setOperatingVariations(
+          typeof (row as any).operating_variations_text === "string" ? String((row as any).operating_variations_text) : null,
+        );
       } else {
         setImages([]);
         setEntranceLine(null);
@@ -281,6 +296,9 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         setEstimatedCost(null);
         setBestTimes([]);
         setAccommodations([]);
+        setAdvisoryText(null);
+        setOperatingVariations(null);
+          setClosedNow(false);
         setOwnerId(null);
         setRatingAvg(null);
         setRatingCount(0);
@@ -557,6 +575,8 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
+          {/** Removed floating CLOSED badge (Status chip already shows it). */}
+
           <View style={[styles.heroTopRow, { paddingTop: insets.top + 8 }]}>
             <Pressable style={styles.heroIconBtn} onPress={() => navigation.goBack()} accessibilityLabel="Go back">
               <Ionicons name="chevron-back" size={24} color={colors.navy} />
@@ -718,13 +738,66 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
                 ) : null}
 
                 {opHours ? (
-                  <View style={styles.entranceBox}>
-                    <View style={styles.entranceHeader}>
-                      <Ionicons name="time-outline" size={18} color={colors.primaryTeal} />
-                      <Text style={styles.entranceTitle}>Operating Hours</Text>
+                  <Pressable
+                    onPress={() => setStatusExpanded((v) => !v)}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: statusExpanded }}
+                    style={({ pressed }) => [styles.statusBox, pressed && { opacity: 0.96 }]}
+                  >
+                    <View style={styles.statusHeaderRow}>
+                      <View style={styles.statusHeaderLeft}>
+                        <Ionicons name="time-outline" size={18} color={colors.primaryTeal} />
+                        <Text style={styles.entranceTitle}>Status</Text>
+                        {closedNow ? (
+                          <View style={styles.statusChipClosed}>
+                            <Text style={styles.statusChipClosedText}>Closed now</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.statusChipOpen}>
+                            <Text style={styles.statusChipOpenText}>Open</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.statusChevron}>
+                        <Ionicons name={statusExpanded ? "chevron-down" : "chevron-up"} size={18} color={colors.muted2} />
+                      </View>
                     </View>
-                    <Text style={styles.entranceText}>{opHours}</Text>
-                  </View>
+
+                    {statusExpanded ? (
+                      <>
+                        <View style={styles.statusRow}>
+                          <Text style={styles.statusLabel}>Hours</Text>
+                          <Text style={styles.statusValue} numberOfLines={1}>
+                            {opHours}
+                          </Text>
+                        </View>
+
+                        {operatingVariations?.trim() ? (
+                          <View style={[styles.statusRow, styles.statusRowBorder]}>
+                            <Text style={styles.statusLabel}>Schedule</Text>
+                            <Text style={styles.statusValue} numberOfLines={4}>
+                              {operatingVariations.trim()}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {advisoryText?.trim() ? (
+                          <View style={[styles.statusRow, styles.statusRowBorder]}>
+                            <Text style={styles.statusLabel}>Advisory</Text>
+                            <Text style={styles.statusValue} numberOfLines={4}>
+                              {advisoryText.trim()}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        {!operatingVariations?.trim() && !advisoryText?.trim() ? (
+                          <Text style={styles.statusHint} numberOfLines={1}>
+                            No updates from the owner.
+                          </Text>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </Pressable>
                 ) : null}
 
                 {showEstimated && estimatedCost ? (
@@ -938,6 +1011,54 @@ const styles = StyleSheet.create({
     position: "relative",
     overflow: "hidden",
   },
+  // closedBadge* removed (no longer used)
+
+  statusBox: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: colors.chipIdle,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statusHeaderRow: {
+    position: "relative",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 6,
+    paddingRight: 26,
+  },
+  statusHeaderLeft: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, flexShrink: 1, minWidth: 0 },
+  statusChevron: { position: "absolute", right: 0, top: 0, paddingTop: 2 },
+  statusChipOpen: {
+    marginLeft: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(46, 155, 76, 0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(46, 155, 76, 0.22)",
+  },
+  statusChipOpenText: { fontSize: 11, fontWeight: "900", color: colors.accentGreen, letterSpacing: 0.3 },
+  statusChipClosed: {
+    marginLeft: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(244, 67, 54, 0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(244, 67, 54, 0.20)",
+  },
+  statusChipClosedText: { fontSize: 11, fontWeight: "900", color: colors.danger, letterSpacing: 0.3 },
+  statusRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingTop: 10 },
+  statusRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "rgba(0,0,0,0.06)", marginTop: 10 },
+  statusLabel: { width: 78, fontSize: 12, fontWeight: "800", color: colors.muted2 },
+  statusValue: { flex: 1, minWidth: 0, fontSize: 13, fontWeight: "500", color: colors.text, lineHeight: 19 },
+  statusHint: { paddingTop: 10, fontSize: 12, color: colors.muted, fontWeight: "500" },
+
+  // closedPill* removed (replaced by closedBadge)
   entranceBox: {
     marginTop: 16,
     padding: 12,

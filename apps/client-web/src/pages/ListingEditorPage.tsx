@@ -105,6 +105,62 @@ export function ListingEditorPage() {
   const [detailReady, setDetailReady] = useState(isNew);
   const [foodCostRange, setFoodCostRange] = useState("");
   const [bestTimes, setBestTimes] = useState<BestTime[]>([]);
+  const [advisoryText, setAdvisoryText] = useState("");
+  const [operatingVariationsText, setOperatingVariationsText] = useState("");
+  const [closedNow, setClosedNow] = useState(false);
+  const [scheduleChoice, setScheduleChoice] = useState<
+    | "none"
+    | "weekdays_closed"
+    | "weekends_closed"
+    | "closed_specific_days"
+    | "open_specific_days_only"
+    | "seasonal"
+    | "appointment_only"
+    | "temporary_closed"
+    | "other"
+  >("none");
+  const [scheduleDetails, setScheduleDetails] = useState("");
+  const [scheduleUntil, setScheduleUntil] = useState(""); // YYYY-MM-DD
+  const [scheduleDays, setScheduleDays] = useState<
+    Array<"Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun">
+  >([]);
+
+  const scheduleDetailsLimit = 120;
+  const scheduleDaysLine = useMemo(() => {
+    if (!scheduleDays.length) return "";
+    return scheduleDays.join(", ");
+  }, [scheduleDays]);
+
+  const scheduleLine = useMemo(() => {
+    const base =
+      scheduleChoice === "none"
+        ? ""
+        : scheduleChoice === "weekdays_closed"
+          ? "Weekdays closed"
+          : scheduleChoice === "weekends_closed"
+            ? "Weekends closed"
+            : scheduleChoice === "closed_specific_days"
+              ? "Closed on specific days"
+              : scheduleChoice === "open_specific_days_only"
+                ? "Open on specific days only"
+                : scheduleChoice === "seasonal"
+                  ? "Seasonal schedule"
+                  : scheduleChoice === "appointment_only"
+                    ? "By appointment only"
+                    : scheduleChoice === "temporary_closed"
+                      ? "Temporarily closed"
+                      : "Other";
+
+    const det =
+      scheduleChoice === "temporary_closed"
+        ? [scheduleUntil.trim() ? `Reopens ${scheduleUntil.trim()}` : "", scheduleDetails.trim()].filter(Boolean).join(" · ")
+        : scheduleChoice === "closed_specific_days" || scheduleChoice === "open_specific_days_only"
+          ? [scheduleDaysLine, scheduleDetails.trim()].filter(Boolean).join(" · ")
+          : scheduleDetails.trim();
+    if (!base) return "";
+    if (!det) return base;
+    return `${base} · ${det}`;
+  }, [scheduleChoice, scheduleDaysLine, scheduleDetails, scheduleUntil]);
 
   const previewFile = pendingFiles[0] ?? null;
   const previewUrl = useMemo(() => (previewFile ? URL.createObjectURL(previewFile) : null), [previewFile]);
@@ -291,6 +347,9 @@ export function ListingEditorPage() {
         estimated_cost_min_pesos?: number | null;
         estimated_cost_max_pesos?: number | null;
         best_visit_times?: string[] | null;
+        advisory_text?: string | null;
+        operating_variations_text?: string | null;
+        closed_now?: boolean | null;
       };
       setName(String(row.name ?? ""));
       setCategoryId(String(row.category_id ?? ""));
@@ -387,6 +446,31 @@ export function ListingEditorPage() {
       const bt = Array.isArray(row.best_visit_times) ? row.best_visit_times : [];
       const nextTimes = bt.filter((x): x is BestTime => BEST_TIMES.includes(x as BestTime));
       setBestTimes(nextTimes);
+      setAdvisoryText(String(row.advisory_text ?? ""));
+      const ov = String(row.operating_variations_text ?? "").trim();
+      setOperatingVariationsText(ov);
+      if (!ov) {
+        setScheduleChoice("none");
+        setScheduleDetails("");
+        setScheduleUntil("");
+        setScheduleDays([]);
+      } else {
+        const [headRaw, ...rest] = ov.split("·").map((x) => x.trim()).filter(Boolean);
+        const head = (headRaw ?? "").toLowerCase();
+        const details = rest.join(" · ").trim();
+        if (head === "weekdays closed") setScheduleChoice("weekdays_closed");
+        else if (head === "weekends closed") setScheduleChoice("weekends_closed");
+        else if (head === "closed on specific days") setScheduleChoice("closed_specific_days");
+        else if (head === "open on specific days only") setScheduleChoice("open_specific_days_only");
+        else if (head === "seasonal schedule") setScheduleChoice("seasonal");
+        else if (head === "by appointment only") setScheduleChoice("appointment_only");
+        else if (head === "temporarily closed") setScheduleChoice("temporary_closed");
+        else setScheduleChoice("other");
+        setScheduleDetails(details);
+        setScheduleUntil("");
+        setScheduleDays([]);
+      }
+      setClosedNow(row.closed_now === true);
 
       const { count: photoCount, error: photoCountErr } = await supabase
         .from("business_photos")
@@ -659,6 +743,13 @@ export function ListingEditorPage() {
       }
     }
 
+    const variationsOut =
+      scheduleChoice === "none"
+        ? ""
+        : scheduleChoice === "other"
+          ? (scheduleDetails.trim() ? scheduleDetails.trim() : operatingVariationsText.trim())
+          : scheduleLine;
+
     const payload = {
       owner_id: uid,
       name: name.trim(),
@@ -668,6 +759,7 @@ export function ListingEditorPage() {
       description: shortDescription.trim() || null,
       allow_reservations: allowReservations,
       tags: tags.length ? tags : [],
+      closed_now: closedNow,
       operating_hours_always_open: alwaysOpen,
       operating_open_hour: alwaysOpen ? null : openHour,
       operating_open_meridiem: alwaysOpen ? null : openMeridiem,
@@ -689,6 +781,8 @@ export function ListingEditorPage() {
       best_visit_times: isFood ? bestTimes : [],
       latitude,
       longitude,
+      advisory_text: advisoryText.trim() || null,
+      operating_variations_text: variationsOut.trim() || null,
       status: "approved" as const,
     };
     try {
@@ -925,6 +1019,25 @@ export function ListingEditorPage() {
                     Displayed in the mobile app as <strong>Always Open</strong>.
                   </p>
                 )}
+              </div>
+
+              <div className="field">
+                <span className="field__group-label" id="closed-now-label">
+                  Resort status
+                </span>
+                <div className="field-checkbox-row" role="group" aria-labelledby="closed-now-label">
+                  <label className="field-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={closedNow}
+                      onChange={(e) => setClosedNow(e.target.checked)}
+                    />
+                    <span>Close now (show “Closed” badge in app)</span>
+                  </label>
+                </div>
+                <p style={{ fontSize: 13, color: "var(--muted)", margin: "4px 0 0" }}>
+                  Use this for temporary closures (e.g. holiday, maintenance). You can add details in <strong>Advisory</strong>.
+                </p>
               </div>
               {isResort && (
                 <>
@@ -1314,6 +1427,126 @@ export function ListingEditorPage() {
                       onChange={(e) => setLongitudeStr(e.target.value)}
                     />
                   </div>
+                </div>
+              </details>
+
+              <details className="editor-disclosure" style={{ marginTop: 10 }}>
+                <summary>
+                  <span>Advisories & schedule changes (for tourists)</span>
+                  <span className="editor-disclosure__meta">
+                    {advisoryText.trim() || operatingVariationsText.trim() ? "Set" : "Not set"}
+                  </span>
+                </summary>
+                <p className="editor-help" style={{ marginTop: 10 }}>
+                  Use this to inform travelers if the place has upcoming events, is closed due to holidays, or has
+                  half-day / special operating hours.
+                </p>
+                <div className="field">
+                  <label htmlFor="advisory">Advisory (events / temporary closure)</label>
+                  <textarea
+                    id="advisory"
+                    rows={4}
+                    placeholder="e.g. Closed on May 1 (Labor Day). Reopens May 2, 8AM. • Fiesta event on May 15, expect crowd."
+                    value={advisoryText}
+                    onChange={(e) => setAdvisoryText(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="schedule-choice">Schedule changes (choices)</label>
+                  <select
+                    id="schedule-choice"
+                    value={scheduleChoice}
+                    onChange={(e) => {
+                      const next = e.target.value as typeof scheduleChoice;
+                      setScheduleChoice(next);
+                      if (next === "none") {
+                        setScheduleDetails("");
+                        setScheduleUntil("");
+                        setScheduleDays([]);
+                        setOperatingVariationsText("");
+                      }
+                    }}
+                  >
+                    <option value="none">No changes (regular hours)</option>
+                    <option value="weekdays_closed">Weekdays closed</option>
+                    <option value="weekends_closed">Weekends closed</option>
+                    <option value="closed_specific_days">Closed on specific days</option>
+                    <option value="open_specific_days_only">Open on specific days only</option>
+                    <option value="seasonal">Seasonal schedule</option>
+                    <option value="appointment_only">By appointment only</option>
+                    <option value="temporary_closed">Temporarily closed</option>
+                    <option value="other">Other (custom)</option>
+                  </select>
+                  <p className="editor-help" style={{ marginTop: 8 }}>
+                    This will be shown in the traveler app under <strong>Status</strong>.
+                  </p>
+
+                  {scheduleChoice !== "none" ? (
+                    <div style={{ marginTop: 10 }}>
+                      <label htmlFor="schedule-details" style={{ display: "block", marginBottom: 6 }}>
+                        {scheduleChoice === "other" ? "Custom schedule (required)" : "Details (optional)"}
+                      </label>
+
+                      {scheduleChoice === "temporary_closed" ? (
+                        <div className="editor-2col editor-2col--tight" style={{ marginBottom: 10 }}>
+                          <div className="field" style={{ margin: 0 }}>
+                            <label htmlFor="schedule-until">Reopens on (optional)</label>
+                            <input
+                              id="schedule-until"
+                              type="date"
+                              value={scheduleUntil}
+                              onChange={(e) => setScheduleUntil(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {scheduleChoice === "closed_specific_days" || scheduleChoice === "open_specific_days_only" ? (
+                        <div style={{ marginBottom: 10 }}>
+                          <div className="editor-help" style={{ marginBottom: 6 }}>
+                            Select days (optional)
+                          </div>
+                          <div className="field-checkbox-row" style={{ flexWrap: "wrap", gap: 10 }}>
+                            {(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const).map((d) => (
+                              <label key={d} className="field-checkbox">
+                                <input
+                                  type="checkbox"
+                                  checked={scheduleDays.includes(d)}
+                                  onChange={(e) => {
+                                    const on = e.target.checked;
+                                    setScheduleDays((prev) => (on ? (prev.includes(d) ? prev : [...prev, d]) : prev.filter((x) => x !== d)));
+                                  }}
+                                />
+                                <span>{d}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <input
+                        id="schedule-details"
+                        value={scheduleDetails}
+                        onChange={(e) => setScheduleDetails(e.target.value)}
+                        placeholder={
+                          scheduleChoice === "other"
+                            ? "e.g. Weekdays: closed • Open Sat–Sun 7AM–5PM"
+                            : "e.g. Open Sat–Sun 7AM–5PM · Closed on May 1"
+                        }
+                        required={scheduleChoice === "other"}
+                        maxLength={scheduleDetailsLimit}
+                      />
+                      <div className="editor-help" style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                        <span>Keep it short so it looks good in the traveler app.</span>
+                        <span>
+                          {scheduleDetails.length}/{scheduleDetailsLimit}
+                        </span>
+                      </div>
+                      <p className="editor-help" style={{ marginTop: 8 }}>
+                        Preview: <strong>{scheduleChoice === "other" ? scheduleDetails.trim() || "—" : scheduleLine || "—"}</strong>
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
               </details>
             </div>
