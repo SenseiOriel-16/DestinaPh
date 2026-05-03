@@ -12,6 +12,7 @@ import {
   Easing,
   FlatList,
   Image,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -28,6 +29,7 @@ import { useItinerary } from "../context/ItineraryContext";
 import { type AccommodationItem, normalizeAccommodations } from "../lib/accommodations";
 import { formatBusinessAddress, sortedPhotoPublicUrls } from "../lib/businessDisplay";
 import { ratingParts, formatRatingSubtitle } from "../lib/businessRatingDisplay";
+import { fetchBusinessDetailRow } from "../lib/businessesSelectCompat";
 import { supabase } from "../lib/supabase";
 import { trackListingIntentVisit } from "../lib/trackListingMetric";
 import { shadowCompat } from "../lib/rnWebStyleCompat";
@@ -36,6 +38,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MapPinPreview } from "../components/MapPinPreview";
 import { openGoogleMapsDirections, openTurnByTurnNavigation } from "../lib/mapExternal";
 import { recordVisitIntentAndStartConfirmation } from "../lib/visitConfirmation";
+import {
+  travelerPromoVisible,
+  formatPromoUntilLabel,
+  travelerPromoHeadlineText,
+  travelerPromoBodyText,
+  travelerPromoValidUntilIso,
+} from "../lib/travelerPromo";
 type Props = CompositeScreenProps<
   NativeStackScreenProps<HomeStackParamList, "Detail">,
   CompositeScreenProps<BottomTabScreenProps<TabParamList>, NativeStackScreenProps<RootStackParamList>>
@@ -51,8 +60,12 @@ type BusinessRow = {
   longitude: number | null;
   closed_now?: boolean | null;
   fully_booked?: boolean | null;
+  closed_reason?: string | null;
   advisory_text?: string | null;
   operating_variations_text?: string | null;
+  promo_headline?: string | null;
+  promo_body?: string | null;
+  promo_valid_until?: string | null;
   tags: string[] | null;
   accommodations: unknown;
   entrance_fee_pesos: number | null;
@@ -154,7 +167,12 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   const [accommodations, setAccommodations] = useState<AccommodationItem[]>([]);
   const [advisoryText, setAdvisoryText] = useState<string | null>(null);
   const [operatingVariations, setOperatingVariations] = useState<string | null>(null);
+  const [promoHeadline, setPromoHeadline] = useState<string | null>(null);
+  const [promoBody, setPromoBody] = useState<string | null>(null);
+  const [promoValidUntil, setPromoValidUntil] = useState<string | null>(null);
   const [closedNow, setClosedNow] = useState(false);
+  const [closedReasonText, setClosedReasonText] = useState<string | null>(null);
+  const [closedAdvisoryModalVisible, setClosedAdvisoryModalVisible] = useState(false);
   const [fullyBooked, setFullyBooked] = useState(false);
   const [statusExpanded, setStatusExpanded] = useState(false);
   const [ownerId, setOwnerId] = useState<string | null>(null);
@@ -193,57 +211,20 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
   }, [navigation]);
 
   useEffect(() => {
+    setClosedAdvisoryModalVisible(false);
     void (async () => {
       await supabase.rpc("track_business_metric", { target: id, metric: "view" });
 
-      const { data, error } = await supabase
-        .from("businesses")
-        .select(
-          `
-          name,
-          description,
-          short_description,
-          subcategory,
-          allow_reservations,
-          address_line,
-          latitude,
-          longitude,
-          closed_now,
-          fully_booked,
-          owner_id,
-          rating_average,
-          rating_count,
-          tags,
-          accommodations,
-          entrance_fee_pesos,
-          entrance_fee_day_pesos,
-          entrance_fee_night_pesos,
-          operating_day,
-          operating_night,
-          operating_hours_always_open,
-          operating_open_hour,
-          operating_open_meridiem,
-          operating_close_hour,
-          operating_close_meridiem,
-          advisory_text,
-          operating_variations_text,
-          pricing_text,
-          estimated_cost_min_pesos,
-          estimated_cost_max_pesos,
-          best_visit_times,
-          municipalities(name),
-          provinces(name),
-          barangays(name),
-          categories(name),
-          business_photos(storage_path,sort_order)
-        `,
-        )
-        .eq("id", id)
-        .order("sort_order", { ascending: true, foreignTable: "business_photos" })
-        .maybeSingle();
+      const { data, error } = await fetchBusinessDetailRow(supabase, id);
 
       if (error) {
-        console.warn("[DestinaPH] detail load:", error.message);
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[DestinaPH] detail load:",
+          error.message,
+          (error as { code?: string; details?: string }).code,
+          (error as { details?: string }).details,
+        );
       }
 
       if (data) {
@@ -289,10 +270,19 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         const bt = (row as any).best_visit_times;
         setBestTimes(Array.isArray(bt) ? bt.filter((x) => typeof x === "string") : []);
         setAccommodations(normalizeAccommodations(row.accommodations));
+        const cr = (row as any).closed_reason;
+        setClosedReasonText(typeof cr === "string" && cr.trim() ? String(cr) : null);
         setAdvisoryText(typeof (row as any).advisory_text === "string" ? String((row as any).advisory_text) : null);
         setOperatingVariations(
           typeof (row as any).operating_variations_text === "string" ? String((row as any).operating_variations_text) : null,
         );
+        setPromoHeadline(travelerPromoHeadlineText((row as any).promo_headline));
+        setPromoBody(travelerPromoBodyText((row as any).promo_body));
+        setPromoValidUntil(travelerPromoValidUntilIso((row as any).promo_valid_until));
+
+        if (row.closed_now === true) {
+          setClosedAdvisoryModalVisible(true);
+        }
       } else {
         setImages([]);
         setEntranceLine(null);
@@ -300,8 +290,12 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
         setEstimatedCost(null);
         setBestTimes([]);
         setAccommodations([]);
+        setClosedReasonText(null);
         setAdvisoryText(null);
         setOperatingVariations(null);
+        setPromoHeadline(null);
+        setPromoBody(null);
+        setPromoValidUntil(null);
           setClosedNow(false);
           setFullyBooked(false);
         setOwnerId(null);
@@ -532,6 +526,8 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
     aboutExpanded || !aboutNeedsToggle ? description : `${description.slice(0, aboutPreviewLen).trim()}…`;
 
   const mapPreview = lat != null && lng != null;
+  const hasOwnerPromo = travelerPromoVisible(promoHeadline, promoValidUntil, promoBody);
+  const closedNoticeBody = (closedReasonText?.trim() || advisoryText?.trim() || "").trim();
 
   const onPhotoScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const x = e.nativeEvent.contentOffset.x;
@@ -541,6 +537,45 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.page}>
+      <Modal
+        visible={closedAdvisoryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setClosedAdvisoryModalVisible(false)}
+      >
+        <View
+          style={[styles.closedModalRoot, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            accessibilityLabel="Dismiss"
+            onPress={() => setClosedAdvisoryModalVisible(false)}
+          />
+          <View style={styles.closedModalCard}>
+            <View style={styles.closedModalIconWrap}>
+              <Ionicons name="close-circle" size={44} color={colors.danger} />
+            </View>
+            <Text style={styles.closedModalTitle}>Closed now</Text>
+            <Text style={styles.closedModalSub}>This place is not welcoming guests at the moment.</Text>
+            {closedNoticeBody ? (
+              <View style={styles.closedModalReasonBox}>
+                <Text style={styles.closedModalReasonText}>{closedNoticeBody}</Text>
+              </View>
+            ) : (
+              <Text style={styles.closedModalNoReason}>No extra details were shared.</Text>
+            )}
+            <Pressable
+              style={({ pressed }) => [styles.closedModalBtn, pressed && { opacity: 0.92 }]}
+              onPress={() => setClosedAdvisoryModalVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss closed notice"
+            >
+              <Text style={styles.closedModalBtnTxt}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <ScrollView
         style={styles.mainScroll}
         nestedScrollEnabled
@@ -635,6 +670,31 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
           </View>
           <Text style={styles.ratingSub}>{formatRatingSubtitle(ratingAvg, ratingCount)}</Text>
 
+          {hasOwnerPromo ? (
+            <View style={styles.promoBox} accessibilityLabel="Promotional offer set by this business">
+              {travelerPromoHeadlineText(promoHeadline) ? (
+                <>
+                  <View style={styles.promoHeaderRow}>
+                    <Ionicons name="gift-outline" size={18} color={colors.primaryTeal} />
+                    <Text style={styles.promoTitle}>{travelerPromoHeadlineText(promoHeadline)}</Text>
+                  </View>
+                  {travelerPromoBodyText(promoBody) ? (
+                    <Text style={styles.promoBody}>{travelerPromoBodyText(promoBody)}</Text>
+                  ) : null}
+                </>
+              ) : (
+                <View style={styles.promoHeaderRow}>
+                  <Ionicons name="gift-outline" size={18} color={colors.primaryTeal} />
+                  <Text style={styles.promoTitle}>{travelerPromoBodyText(promoBody) ?? ""}</Text>
+                </View>
+              )}
+              {promoValidUntil?.trim() ? (
+                <Text style={styles.promoUntil}>Valid through {formatPromoUntilLabel(promoValidUntil.trim())}</Text>
+              ) : null}
+              <Text style={styles.promoFoot}>Shown as the owner entered it · confirm before you pay or travel.</Text>
+            </View>
+          ) : null}
+
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagRow}>
             {categoryName ? (
               <View style={[styles.chip, styles.chipCategory]}>
@@ -657,7 +717,7 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.chipText}>{t}</Text>
               </View>
             ))}
-      </ScrollView>
+          </ScrollView>
 
           {ownerId && sessionUserId && sessionUserId === ownerId ? (
             <Text style={styles.rateHintOwn}>Your listing — guests can leave star ratings here.</Text>
@@ -1018,6 +1078,75 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.pageBg },
+  closedModalRoot: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    backgroundColor: colors.overlayDark,
+  },
+  closedModalCard: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 22,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadowCompat({ opacity: 0.14, radius: 20, offsetY: 10, elevation: 8 }),
+  },
+  closedModalIconWrap: {
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  closedModalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.navy,
+    textAlign: "center",
+  },
+  closedModalSub: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.muted2,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  closedModalReasonBox: {
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: colors.chipIdle,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  closedModalReasonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.text,
+    lineHeight: 22,
+  },
+  closedModalNoReason: {
+    marginTop: 14,
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.muted,
+    textAlign: "center",
+    fontStyle: "italic",
+  },
+  closedModalBtn: {
+    marginTop: 20,
+    borderRadius: 12,
+    paddingVertical: 14,
+    backgroundColor: colors.primaryTeal,
+    alignItems: "center",
+  },
+  closedModalBtnTxt: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.white,
+  },
   heroHost: {
     width: "100%",
     backgroundColor: colors.border,
@@ -1082,6 +1211,20 @@ const styles = StyleSheet.create({
   statusHint: { paddingTop: 10, fontSize: 12, color: colors.muted, fontWeight: "500" },
 
   // closedPill* removed (replaced by closedBadge)
+  promoBox: {
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(11,184,196,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(11,184,196,0.28)",
+  },
+  promoHeaderRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  promoTitle: { flex: 1, fontSize: 14, fontWeight: "800", color: colors.navy, lineHeight: 19 },
+  promoBody: { marginTop: 8, fontSize: 13, fontWeight: "500", color: colors.text, lineHeight: 19 },
+  promoUntil: { marginTop: 8, fontSize: 12, fontWeight: "700", color: colors.primaryTeal },
+  promoFoot: { marginTop: 8, fontSize: 11, fontWeight: "500", color: colors.muted2, lineHeight: 15 },
+
   entranceBox: {
     marginTop: 16,
     padding: 12,

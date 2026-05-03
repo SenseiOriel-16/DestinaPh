@@ -3501,34 +3501,115 @@ html.owner-dark .owner-listings__lead {
 .acc-editor-rows {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .acc-editor-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr minmax(72px, 88px) auto 40px;
-  gap: 8px;
-  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
 }
 
-@media (max-width: 720px) {
-  .acc-editor-row {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto auto;
+.acc-editor-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr) minmax(120px, 160px);
+  gap: 10px 14px;
+  flex: 1 1 340px;
+  min-width: 0;
+}
+
+.acc-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.acc-editor-field label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.acc-editor-field input {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  font-size: 14px;
+  background: #fafafa;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.acc-editor-field input:focus {
+  outline: none;
+  border-color: var(--owner-teal);
+  background: #fff;
+  box-shadow: var(--focus-ring);
+}
+
+.acc-editor-field input:focus:not(:focus-visible) {
+  box-shadow: none;
+}
+
+.acc-editor-price-input {
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fafafa;
+  min-width: 0;
+}
+
+.acc-editor-price-input:focus-within {
+  border-color: var(--owner-teal);
+  background: #fff;
+  box-shadow: var(--focus-ring);
+}
+
+.acc-editor-price-input__prefix {
+  flex-shrink: 0;
+  padding: 12px 0 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.acc-editor-price-input input {
+  border: none;
+  background: transparent;
+  padding: 12px 14px 12px 4px;
+  box-shadow: none;
+}
+
+.acc-editor-price-input input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.acc-editor-row__tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 760px) {
+  .acc-editor-fields {
+    grid-template-columns: 1fr;
+    flex-basis: 100%;
   }
 
-  .acc-editor-row input:nth-of-type(3) {
-    grid-column: 1 / -1;
-  }
-
-  .acc-editor-avail {
-    grid-column: 1 / span 1;
-  }
-
-  .acc-editor-row .icon-btn {
-    justify-self: end;
-    grid-column: 2;
-    grid-row: 3;
+  .acc-editor-row__tail {
+    width: 100%;
+    justify-content: space-between;
+    padding-top: 2px;
   }
 }
 
@@ -3536,7 +3617,7 @@ html.owner-dark .owner-listings__lead {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;

@@ -20,11 +20,18 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
 import type { ExploreStackParamList, TabParamList } from "../navigation/tabTypes";
 import { TabInlineBackButton } from "../components/ScreenBackBar";
+import { TouristSeasonalBanner } from "../components/TouristSeasonalBanner";
 import { firstPhotoPublicUrl, formatBusinessAddress } from "../lib/businessDisplay";
 import { ratingParts } from "../lib/businessRatingDisplay";
+import {
+  BUSINESS_LIST_SELECT_FULL,
+  BUSINESS_LIST_SELECT_LEGACY,
+  fetchApprovedBusinessRowsList,
+} from "../lib/businessesSelectCompat";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
 import { shadowCompat } from "../lib/rnWebStyleCompat";
+import { travelerPromoVisible, travelerPromoListTeaser } from "../lib/travelerPromo";
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<ExploreStackParamList, "ExploreMain">,
@@ -35,6 +42,9 @@ type Row = {
   id: string;
   name: string;
   description: string | null;
+  promo_headline?: string | null;
+  promo_body?: string | null;
+  promo_valid_until?: string | null;
   subcategory?: string | null;
   tags?: string[] | null;
   status: string;
@@ -114,13 +124,15 @@ export function ExploreScreen({ navigation, route }: Props) {
       setMunicipality("all");
       return;
     }
-    const { data, error } = await supabase
-      .from("businesses")
-      .select(
-        "id,name,description,subcategory,tags,status,address_line,rating_average,rating_count,estimated_cost_min_pesos,estimated_cost_max_pesos,best_visit_times,categories(slug,name),municipalities(id,name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
-      )
-      .eq("status", "approved")
-      .order("sort_order", { ascending: true, foreignTable: "business_photos" });
+    const { data, error } = await fetchApprovedBusinessRowsList(
+      supabase,
+      BUSINESS_LIST_SELECT_FULL,
+      BUSINESS_LIST_SELECT_LEGACY,
+    );
+    if (error) {
+      console.warn("[DestinaPH] Explore businesses:", error.message);
+    }
+
     if (!error && data) {
       setLoadError(null);
       const list = data as unknown as Row[];
@@ -164,7 +176,8 @@ export function ExploreScreen({ navigation, route }: Props) {
         !q ||
         r.name.toLowerCase().includes(q) ||
         (r.description ?? "").toLowerCase().includes(q) ||
-        (r.municipalities?.name ?? "").toLowerCase().includes(q);
+        (r.municipalities?.name ?? "").toLowerCase().includes(q) ||
+        travelerPromoListTeaser(r.promo_headline, r.promo_body).toLowerCase().includes(q);
       return catOk && subOk && munOk && (textOk || tagsOk);
     });
 
@@ -190,6 +203,8 @@ export function ExploreScreen({ navigation, route }: Props) {
           </View>
         </View>
       </View>
+
+      <TouristSeasonalBanner />
 
       <View style={styles.searchRow}>
         <Animated.View
@@ -357,6 +372,14 @@ export function ExploreScreen({ navigation, route }: Props) {
                 </Text>
               </View>
               <Text style={styles.catLine}>{item.categories?.name ?? "Listing"}</Text>
+              {travelerPromoVisible(item.promo_headline, item.promo_valid_until, item.promo_body) ? (
+                <View style={styles.listPromoRow} accessibilityLabel="Business owner promo">
+                  <Ionicons name="gift-outline" size={14} color={colors.primaryTeal} />
+                  <Text style={styles.listPromoText} numberOfLines={2}>
+                    {travelerPromoListTeaser(item.promo_headline, item.promo_body)}
+                  </Text>
+                </View>
+              ) : null}
               {(item.categories?.slug ?? "") === "nature-adventure" && item.subcategory ? (
                 <Text style={styles.subcatLine}>
                   {item.subcategory === "waterfalls-swimming"
@@ -565,6 +588,25 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.navy,
     flex: 1,
+  },
+  listPromoRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(11,184,196,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(11,184,196,0.22)",
+  },
+  listPromoText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.navy,
+    lineHeight: 18,
   },
   catLine: {
     fontSize: 13,

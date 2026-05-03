@@ -16,8 +16,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
 import { formatBusinessAddress, firstPhotoPublicUrl } from "../lib/businessDisplay";
+import { fetchUserFavoritesWithBusinesses } from "../lib/businessesSelectCompat";
 import { supabase } from "../lib/supabase";
 import { colors } from "../theme/colors";
+import { travelerPromoVisible, travelerPromoListTeaser } from "../lib/travelerPromo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Favorites">;
 
@@ -28,6 +30,9 @@ type BusinessEmbed = {
   name: string;
   status: string;
   short_description: string | null;
+  promo_headline?: string | null;
+  promo_body?: string | null;
+  promo_valid_until?: string | null;
   address_line: string | null;
   municipalities: { name: string } | null;
   provinces: { name: string } | null;
@@ -63,27 +68,7 @@ export function FavoritesScreen({ navigation }: Props) {
       setRows([]);
       return;
     }
-    const { data, error } = await supabase
-      .from("user_favorites")
-      .select(
-        `
-        id,
-        created_at,
-        businesses (
-          id,
-          name,
-          status,
-          short_description,
-          address_line,
-          municipalities (name),
-          provinces (name),
-          barangays (name),
-          business_photos (storage_path, sort_order)
-        )
-      `,
-      )
-      .eq("user_id", uid)
-      .order("created_at", { ascending: false });
+    const { data, error } = await fetchUserFavoritesWithBusinesses(supabase, uid);
 
     if (error) {
       console.warn("[DestinaPH] favorites load:", error.message);
@@ -215,6 +200,15 @@ export function FavoritesScreen({ navigation }: Props) {
                   <Text style={styles.cardTitle} numberOfLines={2}>
                     {b.name}
                   </Text>
+                  {b.status === "approved" &&
+                  travelerPromoVisible(b.promo_headline, b.promo_valid_until, b.promo_body) ? (
+                    <View style={styles.promoRow} accessibilityLabel="Business owner promo">
+                      <Ionicons name="gift-outline" size={13} color={colors.primaryTeal} />
+                      <Text style={styles.promoText} numberOfLines={2}>
+                        {travelerPromoListTeaser(b.promo_headline, b.promo_body)}
+                      </Text>
+                    </View>
+                  ) : null}
                   <Text style={styles.cardSub} numberOfLines={2}>
                     {subtitle}
                   </Text>
@@ -330,6 +324,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: colors.navy,
+  },
+  promoRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: "rgba(11,184,196,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(11,184,196,0.2)",
+  },
+  promoText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.navy,
+    lineHeight: 16,
   },
   cardSub: {
     marginTop: 4,

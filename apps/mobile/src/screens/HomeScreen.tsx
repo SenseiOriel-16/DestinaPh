@@ -27,10 +27,17 @@ import { firstPhotoPublicUrl, formatBusinessAddress } from "../lib/businessDispl
 import { ratingParts } from "../lib/businessRatingDisplay";
 import { formatDistanceAway, haversineKm, type LatLng } from "../lib/geo";
 import { getInterestSlugs } from "../lib/onboardingStorage";
+import {
+  BUSINESS_HOME_NEAR_SELECT_FULL,
+  BUSINESS_HOME_NEAR_SELECT_LEGACY,
+  fetchApprovedBusinessRowsList,
+} from "../lib/businessesSelectCompat";
 import { supabase } from "../lib/supabase";
 import { BrandAppIcon } from "../ui/BrandAppIcon";
 import { colors } from "../theme/colors";
 import { BookingNotificationBell } from "../components/BookingNotificationBell";
+import { TouristSeasonalBanner } from "../components/TouristSeasonalBanner";
+import { travelerPromoVisible, travelerPromoListTeaser } from "../lib/travelerPromo";
 import { shadowCompat, textShadowCompat } from "../lib/rnWebStyleCompat";
 
 type Props = CompositeScreenProps<
@@ -42,6 +49,9 @@ type Featured = {
   id: string;
   name: string;
   description: string | null;
+  promo_headline?: string | null;
+  promo_body?: string | null;
+  promo_valid_until?: string | null;
   address_line: string | null;
   rating_average?: number | null;
   rating_count?: number | null;
@@ -103,13 +113,15 @@ export function HomeScreen({ navigation }: Props) {
       setHasLocation(false);
     }
 
-    const { data } = await supabase
-      .from("businesses")
-      .select(
-        "id,name,description,address_line,latitude,longitude,rating_average,rating_count,estimated_cost_min_pesos,estimated_cost_max_pesos,best_visit_times,categories(slug,name),municipalities(name),provinces(name),barangays(name),business_photos(storage_path,sort_order)",
-      )
-      .eq("status", "approved")
-      .order("sort_order", { ascending: true, foreignTable: "business_photos" });
+    const { data, error } = await fetchApprovedBusinessRowsList(
+      supabase,
+      BUSINESS_HOME_NEAR_SELECT_FULL,
+      BUSINESS_HOME_NEAR_SELECT_LEGACY,
+    );
+
+    if (error) {
+      console.warn("[DestinaPH] Home businesses:", error.message);
+    }
 
     const rows = (data as unknown as Omit<NearRow, "distanceKm">[]) ?? [];
     const slugSet = new Set(slugs);
@@ -181,6 +193,8 @@ export function HomeScreen({ navigation }: Props) {
         </View>
         <BookingNotificationBell variant="inline" />
       </View>
+
+      <TouristSeasonalBanner />
 
       <View style={styles.hero} collapsable={false}>
         <Image source={HERO_BACKGROUND} style={styles.heroBg} resizeMode="cover" />
@@ -311,6 +325,18 @@ export function HomeScreen({ navigation }: Props) {
                   <Text numberOfLines={2} style={styles.nearName}>
                     {item.name}
                   </Text>
+
+                  {travelerPromoVisible(item.promo_headline, item.promo_valid_until, item.promo_body) ? (
+                    <View
+                      style={[styles.nearPill, styles.nearPillTeal, { marginTop: 6, alignSelf: "flex-start", maxWidth: "100%" }]}
+                      accessibilityLabel="Business owner promo"
+                    >
+                      <Ionicons name="gift-outline" size={13} color={colors.primaryTeal} />
+                      <Text numberOfLines={1} style={[styles.nearPillText, styles.nearPillTextTeal]}>
+                        {travelerPromoListTeaser(item.promo_headline, item.promo_body)}
+                      </Text>
+                    </View>
+                  ) : null}
 
                   <View style={styles.nearMunRow}>
                     <View style={styles.nearMunLeft}>

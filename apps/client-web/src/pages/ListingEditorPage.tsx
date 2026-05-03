@@ -108,7 +108,11 @@ export function ListingEditorPage() {
   const [advisoryText, setAdvisoryText] = useState("");
   const [operatingVariationsText, setOperatingVariationsText] = useState("");
   const [closedNow, setClosedNow] = useState(false);
+  const [closedReason, setClosedReason] = useState("");
   const [fullyBooked, setFullyBooked] = useState(false);
+  const [promoHeadline, setPromoHeadline] = useState("");
+  const [promoBody, setPromoBody] = useState("");
+  const [promoValidUntil, setPromoValidUntil] = useState("");
   const [scheduleChoice, setScheduleChoice] = useState<
     | "none"
     | "weekdays_closed"
@@ -351,7 +355,11 @@ export function ListingEditorPage() {
         advisory_text?: string | null;
         operating_variations_text?: string | null;
         closed_now?: boolean | null;
+        closed_reason?: string | null;
         fully_booked?: boolean | null;
+        promo_headline?: string | null;
+        promo_body?: string | null;
+        promo_valid_until?: string | null;
       };
       setName(String(row.name ?? ""));
       setCategoryId(String(row.category_id ?? ""));
@@ -473,7 +481,12 @@ export function ListingEditorPage() {
         setScheduleDays([]);
       }
       setClosedNow(row.closed_now === true);
+      setClosedReason(row.closed_now === true ? String(row.closed_reason ?? "") : "");
       setFullyBooked(row.fully_booked === true);
+      setPromoHeadline(String(row.promo_headline ?? ""));
+      setPromoBody(String(row.promo_body ?? ""));
+      const pv = row.promo_valid_until;
+      setPromoValidUntil(typeof pv === "string" ? pv.slice(0, 10) : "");
 
       const { count: photoCount, error: photoCountErr } = await supabase
         .from("business_photos")
@@ -763,6 +776,7 @@ export function ListingEditorPage() {
       allow_reservations: allowReservations,
       tags: tags.length ? tags : [],
       closed_now: closedNow,
+      closed_reason: closedNow ? closedReason.trim() || null : null,
       fully_booked: fullyBooked,
       operating_hours_always_open: alwaysOpen,
       operating_open_hour: alwaysOpen ? null : openHour,
@@ -787,6 +801,18 @@ export function ListingEditorPage() {
       longitude,
       advisory_text: advisoryText.trim() || null,
       operating_variations_text: variationsOut.trim() || null,
+      ...((): {
+        promo_headline: string | null;
+        promo_body: string | null;
+        promo_valid_until: string | null;
+      } => {
+        const hasPromo = Boolean(promoHeadline.trim() || promoBody.trim());
+        return {
+          promo_headline: promoHeadline.trim() ? promoHeadline.trim() : null,
+          promo_body: hasPromo ? promoBody.trim() || null : null,
+          promo_valid_until: hasPromo ? promoValidUntil.trim() || null : null,
+        };
+      })(),
       status: "approved" as const,
     };
     try {
@@ -1034,7 +1060,11 @@ export function ListingEditorPage() {
                     <input
                       type="checkbox"
                       checked={closedNow}
-                      onChange={(e) => setClosedNow(e.target.checked)}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setClosedNow(on);
+                        if (!on) setClosedReason("");
+                      }}
                     />
                     <span>Close now (show “Closed” badge in app)</span>
                   </label>
@@ -1048,8 +1078,25 @@ export function ListingEditorPage() {
                   </label>
                 </div>
                 <p style={{ fontSize: 13, color: "var(--muted)", margin: "4px 0 0" }}>
-                  Use this for temporary closures (e.g. holiday, maintenance). You can add details in <strong>Advisory</strong>.
+                  Use “Close now” for temporary closures. Add a short <strong>reason for close</strong> below so travelers
+                  see it in an app notice — or use Advisory for other updates.
                 </p>
+                {closedNow ? (
+                  <div className="field" style={{ marginTop: 14 }}>
+                    <label htmlFor="closed-reason">Reason for close (shown in app)</label>
+                    <textarea
+                      id="closed-reason"
+                      rows={3}
+                      maxLength={500}
+                      placeholder="e.g. Closed for renovation until June 2026 · Emergency maintenance today"
+                      value={closedReason}
+                      onChange={(e) => setClosedReason(e.target.value)}
+                    />
+                    <p style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 0" }}>
+                      Optional but recommended. If empty, the app may still show your general Advisory when closed.
+                    </p>
+                  </div>
+                ) : null}
               </div>
               {isResort && (
                 <>
@@ -1295,39 +1342,60 @@ export function ListingEditorPage() {
                     </span>
                   </summary>
                   <p className="editor-help" style={{ marginTop: 10 }}>
-                    Name, capacity (pax), price in pesos, and whether this type is still available for guests.
+                    Price is per night in pesos. Uncheck <strong>Available</strong> if this type is full or not offered.
                   </p>
                   <div className="acc-editor-rows">
                     {accommodations.map((row, i) => (
                       <div className="acc-editor-row" key={i}>
-                        <input
-                          placeholder="e.g. Cabin"
-                          value={row.name}
-                          onChange={(e) => setAcc(i, { name: e.target.value })}
-                        />
-                        <input
-                          placeholder="e.g. 4-6 pax"
-                          value={row.pax}
-                          onChange={(e) => setAcc(i, { pax: e.target.value })}
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          placeholder="₱"
-                          value={row.price_pesos || ""}
-                          onChange={(e) => setAcc(i, { price_pesos: Number(e.target.value) || 0 })}
-                        />
-                        <label className="acc-editor-avail">
-                          <input
-                            type="checkbox"
-                            checked={row.available}
-                            onChange={(e) => setAcc(i, { available: e.target.checked })}
-                          />
-                          <span>Available</span>
-                        </label>
-                        <button type="button" className="icon-btn" onClick={() => removeAccRow(i)} title="Remove">
-                          ×
-                        </button>
+                        <div className="acc-editor-fields">
+                          <div className="acc-editor-field">
+                            <label htmlFor={`acc-name-${i}`}>Name</label>
+                            <input
+                              id={`acc-name-${i}`}
+                              placeholder="e.g. Cabin"
+                              value={row.name}
+                              onChange={(e) => setAcc(i, { name: e.target.value })}
+                            />
+                          </div>
+                          <div className="acc-editor-field">
+                            <label htmlFor={`acc-pax-${i}`}>Capacity</label>
+                            <input
+                              id={`acc-pax-${i}`}
+                              placeholder="e.g. 4–6 pax"
+                              value={row.pax}
+                              onChange={(e) => setAcc(i, { pax: e.target.value })}
+                            />
+                          </div>
+                          <div className="acc-editor-field acc-editor-field--price">
+                            <label htmlFor={`acc-price-${i}`}>Price / night</label>
+                            <div className="acc-editor-price-input">
+                              <span className="acc-editor-price-input__prefix" aria-hidden>
+                                ₱
+                              </span>
+                              <input
+                                id={`acc-price-${i}`}
+                                type="number"
+                                min={0}
+                                placeholder="0"
+                                value={row.price_pesos || ""}
+                                onChange={(e) => setAcc(i, { price_pesos: Number(e.target.value) || 0 })}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="acc-editor-row__tail">
+                          <label className="acc-editor-avail">
+                            <input
+                              type="checkbox"
+                              checked={row.available}
+                              onChange={(e) => setAcc(i, { available: e.target.checked })}
+                            />
+                            <span>Available</span>
+                          </label>
+                          <button type="button" className="icon-btn" onClick={() => removeAccRow(i)} title="Remove row">
+                            ×
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1561,6 +1629,49 @@ export function ListingEditorPage() {
                   ) : null}
                 </div>
               </details>
+            </div>
+
+            <div className="card editor-card">
+              <h2 className="editor-card__title">Promo for travelers</h2>
+              <p className="editor-help">
+                Travelers see <strong>exactly what you type below</strong> — no placeholder text. Use a headline (best for
+                lists) or details only (lists show the first line of details). Valid date applies whenever headline or
+                details are set. Clear both headline and details to hide the promo everywhere.
+              </p>
+              <div className="field">
+                <label htmlFor="promo-headline">Headline (recommended — shown in lists and listing)</label>
+                <input
+                  id="promo-headline"
+                  placeholder="e.g. Ber-month family package · book 3 nights, save 10%"
+                  value={promoHeadline}
+                  onChange={(e) => setPromoHeadline(e.target.value)}
+                  maxLength={120}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="promo-body">Details (optional)</label>
+                <textarea
+                  id="promo-body"
+                  rows={3}
+                  placeholder="Terms, dates, or how to avail — keep it short."
+                  value={promoBody}
+                  onChange={(e) => setPromoBody(e.target.value)}
+                  maxLength={500}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="promo-until">Valid until (optional)</label>
+                <input
+                  id="promo-until"
+                  type="date"
+                  value={promoValidUntil}
+                  onChange={(e) => setPromoValidUntil(e.target.value)}
+                  disabled={!promoHeadline.trim() && !promoBody.trim()}
+                />
+                <p className="editor-help" style={{ marginTop: 6 }}>
+                  Leave blank for no end date. Past dates hide the promo in the app.
+                </p>
+              </div>
             </div>
           </div>
         </div>

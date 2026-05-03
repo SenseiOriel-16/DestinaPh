@@ -3,6 +3,15 @@
     "name": "DestinaPH",
     "slug": "destinaph",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/34e4180f-72c8-4153-a156-ea21185f9cff",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "platforms": [
       "ios",
       "android",
