@@ -13,6 +13,7 @@
       }
     },
     "preview": {
+      "channel": "preview",
       "distribution": "internal",
       "node": "20.19.4",
       "android": {
@@ -20,6 +21,7 @@
       }
     },
     "production": {
+      "channel": "production",
       "node": "20.19.4",
       "android": {
         "buildType": "app-bundle"

@@ -9,6 +9,7 @@ import {
   Image,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -79,6 +80,7 @@ export function ExploreScreen({ navigation, route }: Props) {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const searchInputRef = useRef<TextInput>(null);
   const searchAnim = useRef(new Animated.Value(0)).current;
@@ -155,6 +157,15 @@ export function ExploreScreen({ navigation, route }: Props) {
       void load();
     }, [load]),
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   const locationLabel =
     municipality === "all"
@@ -351,6 +362,7 @@ export function ExploreScreen({ navigation, route }: Props) {
         ListHeaderComponent={listHeader}
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 28 }}
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
         renderItem={({ item }) => {
           const photoUri = firstPhotoPublicUrl(item.business_photos);
           return (

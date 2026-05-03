@@ -691,7 +691,6 @@ export function DestinationDetailScreen({ route, navigation }: Props) {
               {promoValidUntil?.trim() ? (
                 <Text style={styles.promoUntil}>Valid through {formatPromoUntilLabel(promoValidUntil.trim())}</Text>
               ) : null}
-              <Text style={styles.promoFoot}>Shown as the owner entered it · confirm before you pay or travel.</Text>
             </View>
           ) : null}
 

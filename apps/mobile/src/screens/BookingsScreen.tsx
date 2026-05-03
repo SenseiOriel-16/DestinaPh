@@ -9,6 +9,7 @@ import {
   Image,
   Modal,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -183,6 +184,7 @@ export function BookingsScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const reloadTimerRef = useRef<number | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
   const [tab, setTab] = useState<TabFilter>("upcoming");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
@@ -263,6 +265,15 @@ export function BookingsScreen({ navigation, route }: Props) {
       void load();
     }, [load, navigation, route.params]),
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     let active = true;
@@ -550,6 +561,7 @@ export function BookingsScreen({ navigation, route }: Props) {
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
         ListHeaderComponent={
           <View>
             <View style={[styles.header, { paddingTop: insets.top + 10 }]}>

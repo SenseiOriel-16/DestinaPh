@@ -11,6 +11,7 @@ import {
   Image,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,7 +21,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { RootStackParamList } from "../../App";
 import type { HomeStackParamList, TabParamList } from "../navigation/tabTypes";
-import { TabInlineBackButton } from "../components/ScreenBackBar";
 import { HERO_BACKGROUND } from "../constants/heroBackground";
 import { TRAVEL_CATEGORIES } from "../data/travelCategories";
 import { firstPhotoPublicUrl, formatBusinessAddress } from "../lib/businessDisplay";
@@ -80,6 +80,7 @@ export function HomeScreen({ navigation }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const [recommendedNear, setRecommendedNear] = useState<NearRow[]>([]);
   const [hasLocation, setHasLocation] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const heroCtaPulse = useRef(new Animated.Value(1)).current;
   const useNativeDriver = Platform.OS !== "web";
 
@@ -153,6 +154,15 @@ export function HomeScreen({ navigation }: Props) {
     }, [loadRecommended]),
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadRecommended();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadRecommended]);
+
   const heroTarget = recommendedNear[0];
 
   useEffect(() => {
@@ -181,9 +191,9 @@ export function HomeScreen({ navigation }: Props) {
       style={[styles.page, { paddingTop: Math.max(insets.top, 18) }]}
       contentContainerStyle={{ paddingBottom: 28 }}
       showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />}
     >
       <View style={styles.topRow}>
-        <TabInlineBackButton />
         <View style={styles.brandRow}>
           <BrandAppIcon size={48} />
           <View style={styles.brandText}>

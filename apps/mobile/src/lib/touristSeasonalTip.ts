@@ -5,32 +5,22 @@ export type TouristSeasonalTip = {
   body: string;
 };
 
-function calendarDayInRange(
-  month: number,
-  day: number,
-  start: [number, number],
-  end: [number, number],
-): boolean {
-  const cur = month * 100 + day;
-  const s = start[0] * 100 + start[1];
-  const e = end[0] * 100 + end[1];
-  if (s <= e) return cur >= s && cur <= e;
-  return cur >= s || cur <= e;
-}
+import { formatPhHolidayShort, phCurrentOrNextHoliday } from "./phHolidays";
 
 export function activeTouristSeasonalTip(now = new Date()): TouristSeasonalTip | null {
-  const m = now.getMonth() + 1;
-  const d = now.getDate();
+  const next = phCurrentOrNextHoliday(now);
+  if (next) {
+    return {
+      id: next.holiday.id,
+      title: next.isToday ? `${next.holiday.name} (Today)` : next.holiday.name,
+      body:
+        next.isToday
+          ? "Holiday today—expect schedule changes. Check opening hours and promos before you go."
+          : `Next holiday: ${next.holiday.name} (${formatPhHolidayShort(next.holiday.ymd)}). Check opening hours and promos.`,
+    };
+  }
 
   const tips: Array<TouristSeasonalTip & { start: [number, number]; end: [number, number] }> = [
-    {
-      id: "ph-labor-day",
-      title: "Long weekend & Labor Day",
-      body:
-        "Many Filipinos travel around May 1. Book early, check listing promos, and confirm opening hours with the host.",
-      start: [4, 26],
-      end: [5, 5],
-    },
     {
       id: "summer-travel",
       title: "Summer trips",
@@ -57,10 +47,14 @@ export function activeTouristSeasonalTip(now = new Date()): TouristSeasonalTip |
     },
   ];
 
+  const m = now.getMonth() + 1;
+  const d = now.getDate();
+  const cur = m * 100 + d;
   for (const t of tips) {
-    if (calendarDayInRange(m, d, t.start, t.end)) {
-      return { id: t.id, title: t.title, body: t.body };
-    }
+    const s = t.start[0] * 100 + t.start[1];
+    const e = t.end[0] * 100 + t.end[1];
+    const ok = s <= e ? cur >= s && cur <= e : cur >= s || cur <= e;
+    if (ok) return { id: t.id, title: t.title, body: t.body };
   }
   return null;
 }
